@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { supabase, type FridgeItem } from '@/lib/supabase'
+import { supabase, type FridgeItem } from '../lib/supabase'
 import { Plus, Trash2, ShoppingCart, Check, Users, Bell } from 'lucide-react'
 
 export default function Home() {
