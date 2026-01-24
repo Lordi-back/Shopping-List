@@ -51,31 +51,36 @@ export default function Home() {
       .subscribe()
   }
 
- const addItem = async (name: string) => {
-  if (!name.trim()) return;
-  
+const addItem = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!newItem.trim()) return;
+
   try {
     // 1. Ищем или создаем продукт
     const { data: existingProduct } = await supabase
       .from('products')
       .select('id')
-      .eq('name', name.trim())
+      .ilike('name', newItem.trim())
       .single();
-    
+
     let productId;
-    
+
     if (existingProduct) {
       productId = existingProduct.id;
     } else {
       const { data: newProduct } = await supabase
         .from('products')
-        .insert([{ name: name.trim() }])
+        .insert([{ 
+          name: newItem.trim(),
+          category: 'other',
+          unit: 'шт'
+        }])
         .select()
         .single();
       
-      if (newProduct) productId = newProduct.id;
+      productId = newProduct?.id;
     }
-    
+
     // 2. Добавляем в холодильник
     if (productId) {
       await supabase
@@ -85,12 +90,20 @@ export default function Home() {
           quantity: 1
         }]);
       
-      // Перезагружаем данные
-      loadItems();
+      // 3. Обновляем список (вместо loadItems)
+      const { data: fridgeData } = await supabase
+        .from('fridge_items')
+        .select(`
+          *,
+          products (*)
+        `)
+        .order('created_at', { ascending: false });
+      
+      setItems(fridgeData || []);
       setNewItem('');
     }
   } catch (error) {
-    console.error('Ошибка добавления:', error);
+    console.error('Error adding item:', error);
   }
 };
 
