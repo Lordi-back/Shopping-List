@@ -3,9 +3,9 @@ const { Telegraf } = require('telegraf')
 const { createClient } = require('@supabase/supabase-js')
 
 // Конфигурация
-const BOT_TOKEN = 'ВАШ_TELEGRAM_BOT_TOKEN'
-const SUPABASE_URL = 'https://ваш-проект.supabase.co'
-const SUPABASE_KEY = 'ваш-supabase-key'
+const BOT_TOKEN = '8231208800:AAEihy4T4-ZcWh9bLxml49bgjRC2i4VT944'
+const SUPABASE_URL = 'https://rkbrxjbtilumisyeenlu.supabase.co'
+const SUPABASE_KEY = 'sb_publishable_Oipp5tzp4yb3z8UwrJjm6w_7HGvQq9Z'
 
 // Инициализация
 const bot = new Telegraf(BOT_TOKEN)
