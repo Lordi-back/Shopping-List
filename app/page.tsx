@@ -3,9 +3,18 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { 
-  Fridge, ShoppingCart, Plus, Check, Trash2, 
-  Bell, Users, BarChart3, Settings,
-  Phone, Globe, MessageCircle 
+  Refrigerator as Fridge, 
+  ShoppingCart, 
+  Plus, 
+  Check, 
+  Trash2,
+  Bell,
+  Users,
+  BarChart3,
+  Settings,
+  Phone,
+  Globe,
+  MessageCircle 
 } from 'lucide-react'
 
 export default function Home() {
