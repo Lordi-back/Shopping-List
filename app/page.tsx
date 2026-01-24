@@ -1,74 +1,84 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { supabase, type FridgeItem } from '../lib/supabase'
-import { Plus, Trash2, ShoppingCart, Check, Users, Bell } from 'lucide-react'
+import { supabase } from '../lib/supabase'
+import { 
+  Fridge, ShoppingCart, Plus, Check, Trash2, 
+  Bell, Users, BarChart3, Settings,
+  Phone, Globe, MessageCircle 
+} from 'lucide-react'
 
 export default function Home() {
-  const [items, setItems] = useState<FridgeItem[]>([])
+  const [activeTab, setActiveTab] = useState<'fridge' | 'shopping'>('fridge')
+  const [items, setItems] = useState<any[]>([])
   const [shoppingList, setShoppingList] = useState<any[]>([])
   const [newItem, setNewItem] = useState('')
+  const [loading, setLoading] = useState(true)
   const [familyCode, setFamilyCode] = useState('')
-  const [activeTab, setActiveTab] = useState<'fridge' | 'shopping'>('fridge')
 
-  // Загрузка данных при монтировании
+  // Загрузка данных
   useEffect(() => {
     loadData()
     setupRealtime()
   }, [])
 
   const loadData = async () => {
-    // Загружаем холодильник
-    const { data: fridgeData } = await supabase
-      .from('fridge_items')
-      .select(`
-        *,
-        products (*)
-      `)
-      .order('created_at', { ascending: false })
+    setLoading(true)
+    
+    try {
+      // Загружаем холодильник
+      const { data: fridgeData } = await supabase
+        .from('fridge_items')
+        .select(`
+          *,
+          products (*)
+        `)
+        .order('created_at', { ascending: false })
 
-    // Загружаем список покупок
-    const { data: shoppingData } = await supabase
-      .from('shopping_list')
-      .select(`
-        *,
-        products (*)
-      `)
-      .eq('purchased', false)
+      // Загружаем список покупок
+      const { data: shoppingData } = await supabase
+        .from('shopping_list')
+        .select(`
+          *,
+          products (*)
+        `)
+        .eq('purchased', false)
+        .order('priority', { ascending: true })
 
-    setItems(fridgeData || [])
-    setShoppingList(shoppingData || [])
+      setItems(fridgeData || [])
+      setShoppingList(shoppingData || [])
+    } catch (error) {
+      console.error('Ошибка загрузки:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
+  // Realtime подписка
   const setupRealtime = () => {
-    // Подписываемся на изменения
     supabase
-      .channel('public:fridge_items')
-      .on('postgres_changes', 
+      .channel('db-changes')
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'fridge_items' },
+        () => loadData()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shopping_list' },
         () => loadData()
       )
       .subscribe()
   }
 
-const addItem = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!newItem.trim()) return;
+  // Добавить продукт
+  const addItem = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newItem.trim()) return
 
-  try {
-    // 1. Ищем или создаем продукт
-    const { data: existingProduct } = await supabase
-      .from('products')
-      .select('id')
-      .ilike('name', newItem.trim())
-      .single();
-
-    let productId;
-
-    if (existingProduct) {
-      productId = existingProduct.id;
-    } else {
-      const { data: newProduct } = await supabase
+    try {
+      // 1. Создаем продукт
+      const { data: product, error: productError } = await supabase
         .from('products')
         .insert([{ 
           name: newItem.trim(),
@@ -76,156 +86,96 @@ const addItem = async (e: React.FormEvent) => {
           unit: 'шт'
         }])
         .select()
-        .single();
-      
-      productId = newProduct?.id;
-    }
+        .single()
 
-    // 2. Добавляем в холодильник
-    if (productId) {
-      await supabase
+      if (productError) throw productError
+
+      // 2. Добавляем в холодильник
+      const { error: fridgeError } = await supabase
         .from('fridge_items')
         .insert([{
-          product_id: productId,
+          product_id: product.id,
           quantity: 1
-        }]);
+        }])
+
+      if (fridgeError) throw fridgeError
+
+      // 3. Обновляем данные
+      await loadData()
+      setNewItem('')
       
-      // 3. Обновляем список (вместо loadItems)
-      const { data: fridgeData } = await supabase
-        .from('fridge_items')
-        .select(`
-          *,
-          products (*)
-        `)
-        .order('created_at', { ascending: false });
-      
-      setItems(fridgeData || []);
-      setNewItem('');
+      alert(`✅ Добавлено: ${newItem.trim()}`)
+    } catch (error) {
+      console.error('Ошибка добавления:', error)
+      alert('❌ Ошибка при добавлении. Проверьте консоль.')
     }
-  } catch (error) {
-    console.error('Error adding item:', error);
-  }
-};
-
-  const removeItem = async (id: string) => {
-    await supabase
-      .from('fridge_items')
-      .delete()
-      .eq('id', id)
   }
 
+  // Добавить в список покупок
   const addToShoppingList = async (productId: string) => {
-    await supabase
-      .from('shopping_list')
-      .insert([{
-        product_id: productId,
-        quantity: 1,
-        priority: 1
-      }])
-  }
+    try {
+      const { error } = await supabase
+        .from('shopping_list')
+        .insert([{
+          product_id: productId,
+          quantity: 1,
+          priority: 1
+        }])
 
-  const markAsPurchased = async (id: string) => {
-    await supabase
-      .from('shopping_list')
-      .update({ purchased: true })
-      .eq('id', id)
-  }
-
-  const createFamily = async () => {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase()
-    const { data } = await supabase
-      .from('families')
-      .insert([{ name: 'Наша семья', invite_code: code }])
-      .select()
-      .single()
-    
-    if (data) {
-      setFamilyCode(code)
-      localStorage.setItem('family_code', code)
-      alert(`Код для семьи: ${code}\nПоделитесь этим кодом!`)
+      if (error) throw error
+      
+      await loadData()
+      alert('✅ Добавлено в список покупок')
+    } catch (error) {
+      console.error('Ошибка:', error)
+      alert('❌ Ошибка')
     }
   }
 
-  const joinFamily = async () => {
-    if (!familyCode.trim()) return
-    
-    const { data } = await supabase
-      .from('families')
-      .select('id')
-      .eq('invite_code', familyCode.trim().toUpperCase())
-      .single()
-    
-    if (data) {
-      localStorage.setItem('family_code', familyCode)
-      alert('Вы присоединились к семье!')
-      loadData()
-    } else {
-      alert('Неверный код')
+  // Удалить из холодильника
+  const removeFromFridge = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('fridge_items')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      
+      await loadData()
+      alert('✅ Удалено')
+    } catch (error) {
+      console.error('Ошибка:', error)
+      alert('❌ Ошибка')
+    }
+  }
+
+  // Отметить купленным
+  const markAsPurchased = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('shopping_list')
+        .update({ purchased: true })
+        .eq('id', id)
+
+      if (error) throw error
+      
+      await loadData()
+    } catch (error) {
+      console.error('Ошибка:', error)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-4">
+    <div className="min-h-screen bg-gray-50 p-4">
       <header className="max-w-4xl mx-auto mb-8">
         <h1 className="text-3xl font-bold text-gray-800 mb-2">
           🍏 Семейный холодильник
         </h1>
-        <p className="text-gray-600">
-          Синхронизированный список продуктов для всей семьи
-        </p>
-        
-        {/* Приглашение семьи */}
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={createFamily}
-            className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
-          >
-            <Users size={20} />
-            Создать семью
-          </button>
-          <div className="flex-1 flex gap-2">
-            <input
-              type="text"
-              placeholder="Введите код семьи"
-              value={familyCode}
-              onChange={(e) => setFamilyCode(e.target.value)}
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2"
-            />
-            <button
-              onClick={joinFamily}
-              className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600"
-            >
-              Присоединиться
-            </button>
-          </div>
-        </div>
+        <p className="text-gray-600">Синхронизированный список продуктов</p>
       </header>
 
       <main className="max-w-4xl mx-auto">
-        {/* Табы */}
-        <div className="flex border-b mb-6">
-          <button
-            onClick={() => setActiveTab('fridge')}
-            className={`flex items-center gap-2 px-4 py-3 font-medium ${
-              activeTab === 'fridge'
-                ? 'border-b-2 border-blue-500 text-blue-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            📦 В холодильнике ({items.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('shopping')}
-            className={`flex items-center gap-2 px-4 py-3 font-medium ${
-              activeTab === 'shopping'
-                ? 'border-b-2 border-green-500 text-green-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            🛒 Купить ({shoppingList.length})
-          </button>
-        </div>
-
         {/* Форма добавления */}
         <form onSubmit={addItem} className="mb-6">
           <div className="flex gap-2">
@@ -233,52 +183,66 @@ const addItem = async (e: React.FormEvent) => {
               type="text"
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
-              placeholder="Что добавить в холодильник?"
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Что добавить? (молоко, хлеб...)"
+              className="flex-1 border border-gray-300 rounded-lg px-4 py-3"
             />
             <button
               type="submit"
               className="bg-blue-500 text-white px-6 py-3 rounded-lg flex items-center gap-2 hover:bg-blue-600"
             >
-              <Plus size={24} />
+              <Plus size={20} />
               Добавить
             </button>
           </div>
         </form>
 
+        {/* Табы */}
+        <div className="flex border-b mb-6">
+          <button
+            onClick={() => setActiveTab('fridge')}
+            className={`px-4 py-3 font-medium ${
+              activeTab === 'fridge'
+                ? 'border-b-2 border-blue-500 text-blue-600'
+                : 'text-gray-500'
+            }`}
+          >
+            📦 В холодильнике ({items.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('shopping')}
+            className={`px-4 py-3 font-medium ${
+              activeTab === 'shopping'
+                ? 'border-b-2 border-green-500 text-green-600'
+                : 'text-gray-500'
+            }`}
+          >
+            🛒 Купить ({shoppingList.length})
+          </button>
+        </div>
+
         {/* Контент */}
-        {activeTab === 'fridge' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {loading ? (
+          <div className="text-center py-8">Загрузка...</div>
+        ) : activeTab === 'fridge' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {items.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white rounded-xl shadow p-4 border border-gray-200"
-              >
-                <div className="flex justify-between items-start">
+              <div key={item.id} className="bg-white p-4 rounded-lg border">
+                <div className="flex justify-between">
                   <div>
-                    <h3 className="font-semibold text-lg">
-                      {item.products?.name}
-                    </h3>
-                    <p className="text-gray-600">
-                      Количество: {item.quantity} {item.products?.unit || 'шт'}
-                    </p>
-                    {item.expiry_date && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        📅 {new Date(item.expiry_date).toLocaleDateString('ru-RU')}
-                      </p>
-                    )}
+                    <h3 className="font-semibold">{item.products?.name || 'Без названия'}</h3>
+                    <p>Количество: {item.quantity}</p>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex gap-2">
                     <button
                       onClick={() => addToShoppingList(item.product_id)}
-                      className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
-                      title="Добавить в покупки"
+                      className="text-green-600"
+                      title="В покупки"
                     >
                       <ShoppingCart size={18} />
                     </button>
                     <button
-                      onClick={() => removeItem(item.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                      onClick={() => removeFromFridge(item.id)}
+                      className="text-red-600"
                       title="Удалить"
                     >
                       <Trash2 size={18} />
@@ -291,52 +255,24 @@ const addItem = async (e: React.FormEvent) => {
         ) : (
           <div className="space-y-3">
             {shoppingList.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white rounded-xl shadow p-4 border border-gray-200 flex items-center justify-between"
-              >
+              <div key={item.id} className="bg-white p-4 rounded-lg border flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => markAsPurchased(item.id)}
-                    className="w-6 h-6 border-2 border-gray-300 rounded-full flex items-center justify-center hover:border-green-500"
+                    className="w-6 h-6 border rounded"
                   >
-                    {item.purchased && <Check size={14} className="text-green-500" />}
+                    {item.purchased && <Check size={14} />}
                   </button>
                   <div>
-                    <h3 className="font-semibold">{item.products?.name}</h3>
-                    <p className="text-gray-600">
-                      {item.quantity} {item.products?.unit || 'шт'}
-                    </p>
+                    <h3>{item.products?.name || 'Без названия'}</h3>
+                    <p>Количество: {item.quantity}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => removeItem(item.id)}
-                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                >
-                  <Trash2 size={18} />
-                </button>
               </div>
             ))}
           </div>
         )}
       </main>
-
-      {/* Плавающая кнопка */}
-      <button
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className="fixed bottom-6 right-6 bg-blue-500 text-white p-4 rounded-full shadow-lg hover:bg-blue-600"
-      >
-        <Plus size={24} />
-      </button>
-
-      <button
-  onClick={() => window.open('https://t.me/yourfamily_shopping_bot', '_blank')}
-  className="fixed bottom-24 right-6 bg-blue-500 text-white p-4 rounded-full shadow-lg hover:bg-blue-600 flex items-center gap-2 z-10"
->
-  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.98-.65-.34-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.06-.2-.07-.06-.17-.04-.24-.02-.1.02-1.68 1.06-4.74 3.11-.45.31-.86.46-1.23.45-.41-.01-1.2-.23-1.79-.42-.72-.23-1.29-.36-1.24-.76.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.36-1.36 3.74-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
-  </svg>
-</button>
     </div>
   )
 }
