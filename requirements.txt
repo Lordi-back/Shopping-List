@@ -1,2 +1,2 @@
-python-telegram-bot[job-queue]==13.12
+python-telegram-bot[job-queue]==13.11
 requests==2.31.0
