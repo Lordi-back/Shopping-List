@@ -96,7 +96,7 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"🔄 Привязка по постоянному коду: {code}")
     
     # Отправляем запрос к вашему API
-    api_url = "https://ваш-домен/api/user/link"
+    api_url = "https://shoppinglist-navy.vercel.app/api/user/link"
     payload = {
         "code": code,
         "telegramChatId": chat_id,
