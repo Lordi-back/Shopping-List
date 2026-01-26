@@ -199,7 +199,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     print("🚀 Запуск Telegram бота...")
     
-    application = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # Регистрируем команды
     application.add_handler(CommandHandler("start", start))
