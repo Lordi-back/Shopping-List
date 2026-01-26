@@ -2,7 +2,6 @@ import os
 import sys
 import logging
 import requests
-import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -11,13 +10,9 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8231208800:AAEihy4T4-ZcWh
 SUPABASE_URL = "https://rkbrxjbtilumisyeenlu.supabase.co"
 SUPABASE_KEY = "sb_publishable_Oipp5tzp4yb3z8UwrJjm6w_7HGvQq9Z"
 
+print(f"🚀 Запуск бота...")
 print(f"✅ Токен: {TELEGRAM_TOKEN[:10]}...")
 print(f"✅ Python: {sys.version}")
-
-# Проверка токена
-if not TELEGRAM_TOKEN or "ВАШ_ТОКЕН" in TELEGRAM_TOKEN:
-    print("❌ ОШИБКА: TELEGRAM_BOT_TOKEN не установлен!")
-    sys.exit(1)
 
 # Логирование
 logging.basicConfig(
@@ -25,14 +20,13 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# === ПРОСТЫЕ ФУНКЦИИ ДЛЯ SUPABASE ===
+# === ФУНКЦИИ ДЛЯ SUPABASE ===
 def supabase_request(endpoint, method="GET", data=None):
     """Простой запрос к Supabase"""
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation"
+        "Content-Type": "application/json"
     }
     
     url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
@@ -47,26 +41,31 @@ def supabase_request(endpoint, method="GET", data=None):
         
         if response.status_code < 300:
             return response.json() if response.content else True
-        return None
+        else:
+            print(f"❌ Supabase error {response.status_code}: {response.text}")
+            return None
     except Exception as e:
-        print(f"❌ Ошибка Supabase: {e}")
+        print(f"❌ Request error: {e}")
         return None
 
-# === КОМАНДЫ ===
+# === КОМАНДЫ БОТА ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /start"""
     keyboard = [
-        [InlineKeyboardButton("🔗 Присоединиться", callback_data='join')],
+        [InlineKeyboardButton("🔗 Присоединиться к семье", callback_data='join')],
         [InlineKeyboardButton("👨‍👩‍👧‍👦 Создать семью", callback_data='create')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
         "👋 *Привет! Я бот для семейного списка покупок.*\n\n"
-        "*Для начала:*\n"
-        "1. Используйте тестовый код: `/code TEST789`\n"
-        "2. Посмотрите холодильник: `/list`\n"
-        "3. Добавьте продукты: `/add молоко`\n\n"
+        "*Быстрый старт:*\n"
+        "1. Присоединитесь к тестовой семье:\n"
+        "   `/code TEST789`\n\n"
+        "2. Посмотрите холодильник:\n"
+        "   `/list`\n\n"
+        "3. Добавьте продукты:\n"
+        "   `/add молоко`\n\n"
         "*Тестовые коды:*\n"
         "• TEST789\n"
         "• IVANOV123\n"
@@ -76,7 +75,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Присоединение к семье"""
+    """Команда /code - присоединиться к семье"""
     if not context.args:
         await update.message.reply_text(
             "Введите код семьи:\n"
@@ -89,9 +88,9 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     code = context.args[0].upper()
-    print(f"🔄 Пользователь {update.effective_user.id} пытается присоединиться с кодом: {code}")
+    print(f"🔄 Попытка присоединения с кодом: {code}")
     
-    # Ищем семью в базе
+    # Ищем семью
     families = supabase_request(f"families?invite_code=eq.{code}")
     
     if not families or len(families) == 0:
@@ -110,54 +109,34 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['family_code'] = code
     context.user_data['family_name'] = family.get('name', 'Семья')
     
-    # Сохраняем пользователя
-    user_data = {
-        "telegram_id": str(update.effective_user.id),
-        "family_id": family['id'],
-        "username": update.effective_user.username,
-        "first_name": update.effective_user.first_name,
-        "last_name": update.effective_user.last_name
-    }
-    
-    # Проверяем есть ли пользователь
-    existing = supabase_request(f"users?telegram_id=eq.{update.effective_user.id}&family_id=eq.{family['id']}")
-    if not existing or len(existing) == 0:
-        supabase_request("users", "POST", user_data)
-    else:
-        supabase_request(f"users?telegram_id=eq.{update.effective_user.id}&family_id=eq.{family['id']}", "PATCH", user_data)
-    
     await update.message.reply_text(
         f"✅ Вы присоединились к семье *{family.get('name', 'Семья')}*!\n\n"
         f"Код: `{code}`\n\n"
         "*Теперь доступно:*\n"
-        "• `/list` - холодильник\n"
-        "• `/add молоко` - добавить\n"
-        "• `/shopping` - покупки\n"
-        "• `/recipes` - рецепты\n"
-        "• `/family` - информация",
+        "• `/list` - что в холодильнике\n"
+        "• `/add молоко` - добавить продукт\n"
+        "• `/shopping` - список покупок\n"
+        "• `/recipes` - рецепты",
         parse_mode='Markdown'
     )
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Что в холодильнике"""
-    family_id = context.user_data.get('family_id')
-    
-    if not family_id:
+    """Команда /list - показать холодильник"""
+    if 'family_id' not in context.user_data:
         await update.message.reply_text(
-            "Сначала присоединитесь:\n"
+            "Сначала присоединитесь к семье:\n"
             "`/code TEST789`",
             parse_mode='Markdown'
         )
         return
     
-    print(f"🔄 Пользователь {update.effective_user.id} запрашивает холодильник семьи {family_id}")
+    family_id = context.user_data['family_id']
     
     # Получаем продукты
     fridge_items = supabase_request(
         f"fridge_items?family_id=eq.{family_id}"
-        "&select=id,quantity,products(name,unit,category)"
-        "&order=created_at.desc"
-        "&limit=15"
+        "&select=quantity,products(name,unit)"
+        "&limit=10"
     )
     
     if not fridge_items or len(fridge_items) == 0:
@@ -171,37 +150,22 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Группируем по категориям
-    categories = {}
-    for item in fridge_items:
-        product = item.get('products', {})
-        category = product.get('category', 'Другое')
-        name = product.get('name', 'Неизвестно')
-        quantity = item.get('quantity', 1)
-        unit = product.get('unit', 'шт')
-        
-        if category not in categories:
-            categories[category] = []
-        
-        categories[category].append(f"• {name} - {quantity} {unit}")
-    
     message = "📦 *В холодильнике:*\n\n"
-    for category, items in categories.items():
-        message += f"*{category}:*\n"
-        message += "\n".join(items) + "\n\n"
+    for item in fridge_items:
+        name = item.get('products', {}).get('name', 'Неизвестно')
+        quantity = item.get('quantity', 1)
+        unit = item.get('products', {}).get('unit', 'шт')
+        message += f"• {name} - {quantity} {unit}\n"
     
-    message += f"Всего: {len(fridge_items)} позиций\n"
-    message += "Добавить: `/add продукт [количество]`"
+    message += f"\nВсего: {len(fridge_items)} позиций"
     
     await update.message.reply_text(message, parse_mode='Markdown')
 
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавить продукт"""
-    family_id = context.user_data.get('family_id')
-    
-    if not family_id:
+    """Команда /add - добавить продукт"""
+    if 'family_id' not in context.user_data:
         await update.message.reply_text(
-            "Сначала присоединитесь:\n"
+            "Сначала присоединитесь к семье:\n"
             "`/code TEST789`",
             parse_mode='Markdown'
         )
@@ -210,28 +174,17 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
             "Использование:\n"
-            "`/add молоко` - 1 шт\n"
-            "`/add молоко 2` - 2 шт\n"
-            "`/add молоко л` - 1 литр",
+            "`/add молоко` - добавить 1 шт\n"
+            "`/add молоко 2` - добавить 2 шт",
             parse_mode='Markdown'
         )
         return
     
-    # Парсим аргументы
-    args = " ".join(context.args).split()
-    product_name = args[0]
-    quantity = 1
-    unit = "шт"
+    # Простая логика добавления
+    product_name = " ".join(context.args)
+    family_id = context.user_data['family_id']
     
-    if len(args) > 1:
-        try:
-            quantity = int(args[1])
-            if len(args) > 2:
-                unit = args[2]
-        except ValueError:
-            unit = args[1]
-    
-    print(f"🔄 Добавляем: {product_name}, {quantity}, {unit}")
+    print(f"🔄 Добавление продукта: {product_name} для семьи {family_id}")
     
     # 1. Ищем или создаём продукт
     products = supabase_request(f"products?name=ilike.{product_name}")
@@ -239,11 +192,11 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if products and len(products) > 0:
         product_id = products[0]['id']
     else:
-        # Создаём новый
+        # Создаём новый продукт
         new_product = {
             "name": product_name,
             "category": "Другое",
-            "unit": unit
+            "unit": "шт"
         }
         result = supabase_request("products", "POST", new_product)
         if result and len(result) > 0:
@@ -256,7 +209,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fridge_item = {
         "product_id": product_id,
         "family_id": family_id,
-        "quantity": quantity,
+        "quantity": 1,
         "added_by": str(update.effective_user.id)
     }
     
@@ -264,39 +217,37 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if result:
         await update.message.reply_text(
-            f"✅ Добавлено:\n"
-            f"*{product_name}* - {quantity} {unit}\n\n"
-            f"Посмотреть: `/list`",
+            f"✅ Добавлено: *{product_name}*\n\n"
+            f"Посмотреть холодильник: `/list`",
             parse_mode='Markdown'
         )
     else:
         await update.message.reply_text("❌ Ошибка при добавлении")
 
 async def shopping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Список покупок"""
-    family_id = context.user_data.get('family_id')
-    
-    if not family_id:
+    """Команда /shopping - список покупок"""
+    if 'family_id' not in context.user_data:
         await update.message.reply_text(
-            "Сначала присоединитесь:\n"
+            "Сначала присоединитесь к семье:\n"
             "`/code TEST789`",
             parse_mode='Markdown'
         )
         return
     
+    family_id = context.user_data['family_id']
+    
     # Получаем список покупок
     shopping_items = supabase_request(
         f"shopping_list?family_id=eq.{family_id}"
         "&purchased=eq.false"
-        "&select=id,quantity,priority,products(name,unit)"
-        "&order=priority.asc,created_at.desc"
-        "&limit=20"
+        "&select=quantity,priority,products(name,unit)"
+        "&limit=10"
     )
     
     if not shopping_items or len(shopping_items) == 0:
         await update.message.reply_text(
             "✅ *Список покупок пуст!*\n\n"
-            "Добавить из холодильника можно в веб-приложении:\n"
+            "Добавить можно из холодильника в веб-приложении:\n"
             "👉 https://shoppinglist-navy.vercel.app",
             parse_mode='Markdown'
         )
@@ -305,46 +256,36 @@ async def shopping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = "🛒 *Список покупок:*\n\n"
     
     for i, item in enumerate(shopping_items, 1):
-        product = item.get('products', {})
-        name = product.get('name', 'Неизвестно')
+        name = item.get('products', {}).get('name', 'Неизвестно')
         quantity = item.get('quantity', 1)
-        unit = product.get('unit', 'шт')
+        unit = item.get('products', {}).get('unit', 'шт')
         priority = item.get('priority', 2)
         
         priority_icon = "🔴" if priority == 1 else "🟡" if priority == 2 else "🔵"
-        priority_text = "Срочно" if priority == 1 else "Обычно" if priority == 2 else "Когда будет"
         
-        message += f"{i}. {priority_icon} *{name}* - {quantity} {unit}\n"
-        message += f"   ({priority_text})\n\n"
+        message += f"{i}. {priority_icon} {name} - {quantity} {unit}\n"
     
-    message += f"Всего: {len(shopping_items)} позиций\n"
-    message += "Отметить купленным можно в веб-приложении."
+    message += f"\nВсего: {len(shopping_items)} позиций"
     
     await update.message.reply_text(message, parse_mode='Markdown')
 
 async def recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Рецепты"""
-    family_id = context.user_data.get('family_id')
-    
-    if not family_id:
+    """Команда /recipes - рецепты"""
+    if 'family_id' not in context.user_data:
         await update.message.reply_text(
-            "Сначала присоединитесь:\n"
+            "Сначала присоединитесь к семье:\n"
             "`/code TEST789`",
             parse_mode='Markdown'
         )
         return
     
-    # Получаем продукты
-    fridge_items = supabase_request(
-        f"fridge_items?family_id=eq.{family_id}"
-        "&select=products(name)"
-        "&limit=10"
-    )
+    # Получаем рецепты из базы
+    recipes = supabase_request("recipes?limit=3")
     
-    if not fridge_items or len(fridge_items) < 2:
+    if not recipes or len(recipes) == 0:
         await update.message.reply_text(
-            "🍳 *Нужно минимум 2 продукта в холодильнике.*\n\n"
-            "Добавьте:\n"
+            "🍳 *Рецепты скоро появятся!*\n\n"
+            "Сначала добавьте продукты в холодильник:\n"
             "`/add молоко`\n"
             "`/add яйца 10`\n"
             "`/add хлеб 2`",
@@ -352,91 +293,38 @@ async def recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Получаем рецепты
-    all_recipes = supabase_request("recipes?limit=5")
-    
-    if not all_recipes:
-        await update.message.reply_text(
-            "🍳 *Рецепты скоро появятся!*\n\n"
-            "А пока посмотрите холодильник: `/list`",
-            parse_mode='Markdown'
-        )
-        return
-    
-    # Формируем ответ
     message = "🍳 *Доступные рецепты:*\n\n"
     
-    for recipe in all_recipes[:3]:
-        message += f"*{recipe.get('title', 'Рецепт')}*\n"
-        message += f"⏱ {recipe.get('prep_time', 0) + recipe.get('cook_time', 0)} мин | "
-        message += f"🏷 {recipe.get('difficulty', 'средне')}\n"
-        message += f"_{recipe.get('description', '')}_\n\n"
+    for recipe in recipes:
+        title = recipe.get('title', 'Рецепт')
+        prep_time = recipe.get('prep_time', 0)
+        cook_time = recipe.get('cook_time', 0)
+        difficulty = recipe.get('difficulty', 'средне')
+        
+        message += f"*{title}*\n"
+        message += f"⏱ {prep_time + cook_time} мин | 🏷 {difficulty}\n\n"
     
     message += "Больше рецептов скоро!"
     
     await update.message.reply_text(message, parse_mode='Markdown')
 
-async def family_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Информация о семье"""
-    family_id = context.user_data.get('family_id')
-    
-    if not family_id:
-        await update.message.reply_text(
-            "Сначала присоединитесь:\n"
-            "`/code TEST789`",
-            parse_mode='Markdown'
-        )
-        return
-    
-    # Получаем информацию
-    families = supabase_request(f"families?id=eq.{family_id}")
-    
-    if not families or len(families) == 0:
-        await update.message.reply_text("❌ Семья не найдена")
-        return
-    
-    family = families[0]
-    
-    # Статистика
-    users = supabase_request(f"users?family_id=eq.{family_id}&select=count")
-    fridge = supabase_request(f"fridge_items?family_id=eq.{family_id}&select=count")
-    shopping = supabase_request(f"shopping_list?family_id=eq.{family_id}&purchased=eq.false&select=count")
-    
-    members = users[0]['count'] if users and len(users) > 0 else 0
-    fridge_count = fridge[0]['count'] if fridge and len(fridge) > 0 else 0
-    shopping_count = shopping[0]['count'] if shopping and len(shopping) > 0 else 0
-    
-    message = f"👨‍👩‍👧‍👦 *Семья: {family.get('name', 'Без названия')}*\n\n"
-    message += f"🔑 Код: `{family.get('invite_code', 'Нет')}`\n"
-    message += f"👥 Участников: {members}\n"
-    message += f"📦 В холодильнике: {fridge_count} позиций\n"
-    message += f"🛒 В покупках: {shopping_count} позиций\n\n"
-    message += "*Команды:*\n"
-    message += "• `/list` - холодильник\n"
-    message += "• `/add` - добавить продукт\n"
-    message += "• `/shopping` - покупки\n"
-    message += "• `/recipes` - рецепты"
-    
-    await update.message.reply_text(message, parse_mode='Markdown')
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Помощь"""
+    """Команда /help - помощь"""
     message = (
         "📚 *Помощь по командам:*\n\n"
         
         "*Основные:*\n"
         "• `/start` - начать\n"
-        "• `/code КОД` - присоединиться\n"
+        "• `/code КОД` - присоединиться к семье\n"
         "• `/help` - эта справка\n\n"
         
         "*Холодильник:*\n"
-        "• `/list` - что есть\n"
-        "• `/add продукт` - добавить\n\n"
+        "• `/list` - что есть в холодильнике\n"
+        "• `/add продукт` - добавить продукт\n\n"
         
         "*Покупки и рецепты:*\n"
         "• `/shopping` - список покупок\n"
-        "• `/recipes` - рецепты\n"
-        "• `/family` - информация о семье\n\n"
+        "• `/recipes` - рецепты\n\n"
         
         "*Тестовые коды:*\n"
         "• TEST789\n"
@@ -472,11 +360,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-# === ЗАПУСК ===
+# === ЗАПУСК БОТА ===
 def main():
-    """Основная функция"""
     print("=" * 50)
-    print("🚀 ЗАПУСК FAMILY CHEF BOT")
+    print("🤖 Family Chef Bot запускается...")
     print("=" * 50)
     
     try:
@@ -490,34 +377,33 @@ def main():
         application.add_handler(CommandHandler("add", add_command))
         application.add_handler(CommandHandler("shopping", shopping_command))
         application.add_handler(CommandHandler("recipes", recipes_command))
-        application.add_handler(CommandHandler("family", family_command))
         application.add_handler(CommandHandler("help", help_command))
         
         # Обработчик кнопок
         application.add_handler(CallbackQueryHandler(button_handler))
         
         print("✅ Бот готов к работе!")
-        print("📱 Команды:")
+        print("📱 Доступные команды:")
         print("   /start - начать")
         print("   /code КОД - присоединиться")
         print("   /list - холодильник")
         print("   /add - добавить продукт")
         print("   /shopping - покупки")
         print("   /recipes - рецепты")
-        print("   /family - информация")
         print("   /help - справка")
         print("=" * 50)
         print("🤖 Ожидаю сообщений...")
         print("=" * 50)
         
-        # Запускаем
+        # Запускаем бота
         application.run_polling(allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
-        print(f"❌ Критическая ошибка: {e}")
-        print("Попробуйте:")
-        print("1. pip install python-telegram-bot==20.7")
-        print("2. Или используйте Dockerfile с Python 3.11")
+        print(f"❌ Ошибка запуска: {e}")
+        print("Проверьте:")
+        print("1. Правильный токен в Railway Variables")
+        print("2. requirements.txt содержит python-telegram-bot==20.7")
+        print("3. Python версия 3.11+")
 
 if __name__ == '__main__':
     main()
