@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +12,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Генерируем постоянный 8-значный код
+    // Генерируем постоянный 8-значный код БЕЗ uuid
     const generateCode = () => {
       return Math.random().toString(36).substring(2, 10).toUpperCase();
     };
@@ -98,60 +97,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Проверка статуса
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const code = searchParams.get('code');
-  const userId = searchParams.get('userId');
-
-  if (code) {
-    // Проверка кода
-    const { data, error } = await supabase
-      .from('user_sync_codes')
-      .select('*')
-      .eq('sync_code', code)
-      .single();
-
-    if (error || !data) {
-      return NextResponse.json(
-        { error: 'Code not found' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({
-      valid: true,
-      userId: data.user_id,
-      telegramChatId: data.telegram_chat_id,
-      telegramUsername: data.telegram_username
-    });
-  }
-
-  if (userId) {
-    // Получение информации пользователя
-    const { data, error } = await supabase
-      .from('user_sync_codes')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-
-    if (error) {
-      return NextResponse.json({ exists: false });
-    }
-
-    return NextResponse.json({
-      exists: true,
-      code: data.sync_code,
-      isLinked: !!data.telegram_chat_id,
-      telegramUsername: data.telegram_username,
-      created: data.created_at
-    });
-  }
-
-  return NextResponse.json(
-    { error: 'Code or userId required' },
-    { status: 400 }
-  );
 }
