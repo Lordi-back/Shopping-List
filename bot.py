@@ -1,19 +1,8 @@
-import imghdr_fix 
+
 import os
 import logging
 import requests
-import sys
-if sys.version_info >= (3, 13):
-    # Эмуляция отсутствующего модуля imghdr
-    class FakeImghdr:
-        def what(self, *args, **kwargs):
-            return None
-    
-    sys.modules['imghdr'] = FakeImghdr()
-    import warnings
-    warnings.filterwarnings("ignore", message="'imghdr' module is deprecated")
 
-# === ИМПОРТ ПОСЛЕ ФИКСА ===
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
