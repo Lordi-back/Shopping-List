@@ -197,6 +197,48 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
+async def find_recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Находит рецепты по продуктам в холодильнике"""
+    
+    # 1. Получаем продукты из холодильника
+    family_id = context.user_data.get('family_id')
+    fridge_items = supabase_request(
+        f"fridge_items?family_id=eq.{family_id}&select=products(name)"
+    )
+    
+    if not fridge_items:
+        await update.message.reply_text("Холодильник пуст!")
+        return
+    
+    # 2. Получаем названия продуктов
+    products = [item['products']['name'].lower() for item in fridge_items]
+    
+    # 3. Ищем рецепты (упрощённая логика)
+    all_recipes = supabase_request("recipes?limit=20")
+    
+    matching_recipes = []
+    for recipe in all_recipes:
+        recipe_ingredients = list(recipe['ingredients'].keys())
+        # Простой алгоритм сопоставления
+        common = len(set(products) & set(recipe_ingredients))
+        if common >= 2:  # Хотя бы 2 совпадающих ингредиента
+            matching_recipes.append((recipe, common))
+    
+    # 4. Сортируем и выводим
+    matching_recipes.sort(key=lambda x: x[1], reverse=True)
+    
+    if not matching_recipes:
+        await update.message.reply_text("Не нашлось рецептов для ваших продуктов 😔")
+        return
+    
+    message = "🍳 *Подходящие рецепты:*\n\n"
+    for recipe, score in matching_recipes[:3]:
+        message += f"*{recipe['title']}*\n"
+        message += f"⏱ {recipe['prep_time']+recipe['cook_time']} мин | "
+        message += f"📊 Совпадений: {score}\n\n"
+    
+    await update.message.reply_text(message, parse_mode='Markdown')
+
 # === ЗАПУСК БОТА ===
 def main():
     print("🚀 Запуск Telegram бота...")
