@@ -71,7 +71,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• IVANOV123\n"
         "• PETROV456",
         reply_markup=reply_markup,
-        parse_mode='Markdown'
+        
     )
 
 async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,7 +85,7 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "2. Нажмите 'Получить код для Telegram'\n"
             "3. Скопируйте 8-значный код\n"
             "4. Отправьте его сюда",
-            parse_mode='Markdown'
+           
         )
         return
     
@@ -127,7 +127,7 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "`/shopping` - покупки\n"
                 "`/add молоко` - добавить\n"
                 "`/help` - справка",
-                parse_mode='Markdown'
+                
             )
             
             # Сохраняем в базу families для совместимости
@@ -145,12 +145,12 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"1. Правильность кода `{code}`\n"
                 f"2. Что код скопирован полностью\n"
                 f"3. Что веб-приложение открыто",
-                parse_mode='Markdown'
+                
             )
     except Exception as e:
         await update.message.reply_text(
             f"❌ Ошибка соединения: {str(e)[:100]}",
-            parse_mode='Markdown'
+           
         )
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -159,7 +159,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Сначала присоединитесь к семье:\n"
             "`/code TEST789`",
-            parse_mode='Markdown'
+            
         )
         return
     
@@ -179,7 +179,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "`/add молоко`\n"
             "`/add хлеб 2`\n"
             "`/add яйца 10`",
-            parse_mode='Markdown'
+            
         )
         return
     
@@ -192,7 +192,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message += f"\nВсего: {len(fridge_items)} позиций"
     
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message, )
 
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /add - добавить продукт"""
@@ -200,7 +200,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Сначала присоединитесь к семье:\n"
             "`/code TEST789`",
-            parse_mode='Markdown'
+            
         )
         return
     
@@ -209,7 +209,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Использование:\n"
             "`/add молоко` - добавить 1 шт\n"
             "`/add молоко 2` - добавить 2 шт",
-            parse_mode='Markdown'
+
         )
         return
     
@@ -252,7 +252,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ Добавлено: *{product_name}*\n\n"
             f"Посмотреть холодильник: `/list`",
-            parse_mode='Markdown'
+            
         )
     else:
         await update.message.reply_text("❌ Ошибка при добавлении")
@@ -263,7 +263,7 @@ async def shopping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Сначала присоединитесь к семье:\n"
             "`/code TEST789`",
-            parse_mode='Markdown'
+           
         )
         return
     
@@ -282,7 +282,7 @@ async def shopping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "✅ *Список покупок пуст!*\n\n"
             "Добавить можно из холодильника в веб-приложении:\n"
             "👉 https://shoppinglist-navy.vercel.app",
-            parse_mode='Markdown'
+           
         )
         return
     
@@ -300,7 +300,7 @@ async def shopping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message += f"\nВсего: {len(shopping_items)} позиций"
     
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message,)
 
 async def recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /recipes - рецепты"""
@@ -308,7 +308,7 @@ async def recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Сначала присоединитесь к семье:\n"
             "`/code TEST789`",
-            parse_mode='Markdown'
+            
         )
         return
     
@@ -322,7 +322,7 @@ async def recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "`/add молоко`\n"
             "`/add яйца 10`\n"
             "`/add хлеб 2`",
-            parse_mode='Markdown'
+           
         )
         return
     
@@ -339,7 +339,7 @@ async def recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message += "Больше рецептов скоро!"
     
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message, )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /help - помощь"""
@@ -368,7 +368,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👉 https://shoppinglist-navy.vercel.app"
     )
     
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message, )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик кнопок"""
@@ -382,7 +382,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Или другие тестовые коды:\n"
             "• IVANOV123\n"
             "• PETROV456",
-            parse_mode='Markdown'
+           
         )
     elif query.data == 'create':
         await query.edit_message_text(
@@ -390,7 +390,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "👉 https://shoppinglist-navy.vercel.app\n\n"
             "После создания получите код и используйте:\n"
             "`/code ВАШ_КОД`",
-            parse_mode='Markdown'
+            
         )
 
 # === ЗАПУСК БОТА ===
