@@ -2,6 +2,7 @@ import imghdr_fix
 import os
 import logging
 import requests
+import sys
 if sys.version_info >= (3, 13):
     # Эмуляция отсутствующего модуля imghdr
     class FakeImghdr:
