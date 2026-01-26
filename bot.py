@@ -75,50 +75,83 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /code - присоединиться к семье"""
+    """Команда /code - привязка к веб-аккаунту"""
     if not context.args:
         await update.message.reply_text(
-            "Введите код семьи:\n"
-            "`/code TEST789`\n\n"
-            "Или другие тестовые коды:\n"
-            "`/code IVANOV123`\n"
-            "`/code PETROV456`",
+            "Введите ваш постоянный код из веб-приложения:\n"
+            "`/code ABCDEF12`\n\n"
+            "*Как получить код:*\n"
+            "1. Откройте веб-приложение\n"
+            "2. Нажмите 'Получить код для Telegram'\n"
+            "3. Скопируйте 8-значный код\n"
+            "4. Отправьте его сюда",
             parse_mode='Markdown'
         )
         return
     
-    code = context.args[0].upper()
-    print(f"🔄 Попытка присоединения с кодом: {code}")
+    code = context.args[0].upper().strip()
+    chat_id = update.effective_chat.id
+    username = update.effective_user.username or update.effective_user.first_name
     
-    # Ищем семью
-    families = supabase_request(f"families?invite_code=eq.{code}")
+    print(f"🔄 Привязка по постоянному коду: {code}")
     
-    if not families or len(families) == 0:
+    # Отправляем запрос к вашему API
+    api_url = "https://ваш-домен/api/user/link"
+    payload = {
+        "code": code,
+        "telegramChatId": chat_id,
+        "telegramUsername": username
+    }
+    
+    try:
+        response = requests.post(api_url, json=payload)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Сохраняем в user_data
+            context.user_data['user_id'] = data.get('userId')
+            context.user_data['permanent_code'] = code
+            context.user_data['synced'] = True
+            
+            await update.message.reply_text(
+                f"✅ *Привязка успешна!*\n\n"
+                f"Ваш постоянный код: `{code}`\n"
+                f"Telegram: @{username}\n\n"
+                "*Теперь доступно:*\n"
+                "• Уведомления о новых продуктах\n"
+                "• Управление списками из Telegram\n"
+                "• Синхронизация с веб-приложением\n\n"
+                "*Команды:*\n"
+                "`/list` - холодильник\n"
+                "`/shopping` - покупки\n"
+                "`/add молоко` - добавить\n"
+                "`/help` - справка",
+                parse_mode='Markdown'
+            )
+            
+            # Сохраняем в базу families для совместимости
+            supabase_request("families", "POST", {
+                "invite_code": code,
+                "name": f"Telegram: @{username}",
+                "created_at": datetime.now().isoformat()
+            })
+            
+        else:
+            error_msg = response.json().get('error', 'Неизвестная ошибка')
+            await update.message.reply_text(
+                f"❌ *Ошибка:* {error_msg}\n\n"
+                f"Проверьте:\n"
+                f"1. Правильность кода `{code}`\n"
+                f"2. Что код скопирован полностью\n"
+                f"3. Что веб-приложение открыто",
+                parse_mode='Markdown'
+            )
+    except Exception as e:
         await update.message.reply_text(
-            f"❌ Код `{code}` не найден.\n\n"
-            "Попробуйте тестовые коды:\n"
-            "• TEST789\n"
-            "• IVANOV123\n"
-            "• PETROV456",
+            f"❌ Ошибка соединения: {str(e)[:100]}",
             parse_mode='Markdown'
         )
-        return
-    
-    family = families[0]
-    context.user_data['family_id'] = family['id']
-    context.user_data['family_code'] = code
-    context.user_data['family_name'] = family.get('name', 'Семья')
-    
-    await update.message.reply_text(
-        f"✅ Вы присоединились к семье *{family.get('name', 'Семья')}*!\n\n"
-        f"Код: `{code}`\n\n"
-        "*Теперь доступно:*\n"
-        "• `/list` - что в холодильнике\n"
-        "• `/add молоко` - добавить продукт\n"
-        "• `/shopping` - список покупок\n"
-        "• `/recipes` - рецепты",
-        parse_mode='Markdown'
-    )
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /list - показать холодильник"""
