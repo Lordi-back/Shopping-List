@@ -175,6 +175,74 @@ export default function Home() {
     }
   }
 
+// Компонент FamilySettings
+const FamilySettings = () => {
+  const [familyCode, setFamilyCode] = useState('');
+  const [showCode, setShowCode] = useState(false);
+  
+  const generateFamilyCode = async () => {
+    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const { data } = await supabase
+      .from('families')
+      .insert([{ 
+        name: 'Наша семья', 
+        invite_code: code,
+        created_at: new Date().toISOString()
+      }])
+      .select()
+      .single();
+    
+    if (data) {
+      localStorage.setItem('family_code', code);
+      setFamilyCode(code);
+      setShowCode(true);
+    }
+  };
+  
+  return (
+    <div className="p-4 bg-white rounded-lg shadow">
+      <h3 className="text-lg font-semibold mb-4">👨‍👩‍👧‍👦 Управление семьёй</h3>
+      
+      {!showCode ? (
+        <button
+          onClick={generateFamilyCode}
+          className="bg-blue-500 text-white px-4 py-2 rounded"
+        >
+          Создать семью
+        </button>
+      ) : (
+        <div>
+          <p className="mb-2">Код вашей семьи:</p>
+          <div className="bg-gray-100 p-3 rounded text-center text-2xl font-mono mb-4">
+            {familyCode}
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Отправьте этот код семье. Они введут его в Telegram бота
+            командой <code>/code {familyCode}</code>
+          </p>
+          
+          <div className="space-y-2">
+            <button
+              onClick={() => navigator.clipboard.writeText(familyCode)}
+              className="bg-gray-200 px-3 py-1 rounded text-sm"
+            >
+              📋 Скопировать код
+            </button>
+            <button
+              onClick={() => setShowCode(false)}
+              className="text-red-500 text-sm"
+            >
+              Создать новый код
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+  
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <header className="max-w-4xl mx-auto mb-8">
