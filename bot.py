@@ -7,7 +7,8 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.error import Conflict
 
 # === НАСТРОЙКИ ===
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8231208800:AAEihy4T4-ZcWh9bLxml49bgjRC2i4VT944")
@@ -54,6 +55,40 @@ def supabase_request(endpoint, method="GET", data=None):
     except Exception as e:
         print(f"❌ Request error: {e}")
         return None
+
+# === ФУНКЦИИ ДЛЯ ПРОВЕРКИ ПОДКЛЮЧЕНИЯ ===
+def check_user_connected(context: ContextTypes.DEFAULT_TYPE) -> tuple[bool, str]:
+    """Проверяет подключение пользователя к семье"""
+    # Проверяем в context.user_data
+    if 'family_id' in context.user_data:
+        return True, context.user_data['family_id']
+    
+    # Если нет в context, проверяем в базе данных по telegram_id
+    if context.user_data.get('telegram_id'):
+        telegram_id = context.user_data['telegram_id']
+    else:
+        return False, None
+    
+    try:
+        user = supabase_request(f"users?telegram_id=eq.{telegram_id}")
+        if user and len(user) > 0 and user[0].get('family_id'):
+            # Сохраняем в context для будущих запросов
+            context.user_data['telegram_id'] = telegram_id
+            context.user_data['family_id'] = user[0]['family_id']
+            context.user_data['username'] = user[0].get('username')
+            context.user_data['synced'] = True
+            
+            # Находим код семьи
+            family = supabase_request(f"families?id=eq.{user[0]['family_id']}")
+            if family and len(family) > 0:
+                context.user_data['family_code'] = family[0].get('invite_code')
+                context.user_data['family_name'] = family[0].get('name')
+            
+            return True, user[0]['family_id']
+    except Exception as e:
+        print(f"Ошибка проверки пользователя: {e}")
+    
+    return False, None
 
 # === ФУНКЦИИ ДЛЯ РЕЦЕПТОВ ===
 def get_ai_recipes(ingredients: List[str], max_time: int = None) -> List[Dict]:
@@ -220,6 +255,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔗 Присоединиться к семье", callback_data='join')],
         [InlineKeyboardButton("🍳 Искать рецепты", callback_data='recipes')],
+        [InlineKeyboardButton("📊 Статус подключения", callback_data='status')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -235,7 +271,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<b>Тестовые коды:</b>\n"
         "• TEST789\n"
         "• IVANOV123\n"
-        "• PETROV456",
+        "• PETROV456\n\n"
+        "<b>Новые команды:</b>\n"
+        "<code>/status</code> - проверить подключение\n"
+        "<code>/reconnect</code> - переподключиться",
         parse_mode='HTML',
         reply_markup=reply_markup
     )
@@ -343,6 +382,7 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<code>/recipes</code> - ИИ-рецепты\n"
             "<code>/add продукт</code> - добавить\n"
             "<code>/status</code> - статус\n"
+            "<code>/reconnect</code> - переподключиться\n"
             "<code>/help</code> - справка"
         )
         
@@ -356,54 +396,115 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"❌ Ошибка в code_command: {e}")
         await update.message.reply_text(error_msg, parse_mode='HTML')
 
-def check_user_connected(context: ContextTypes.DEFAULT_TYPE) -> tuple[bool, str]:
-    """Проверяет подключение пользователя к семье"""
-    # Проверяем в context.user_data
-    if 'family_id' in context.user_data:
-        return True, context.user_data['family_id']
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /status - проверить статус подключения"""
+    chat_id = update.effective_chat.id
+    telegram_id = str(chat_id)
+    username = update.effective_user.username or update.effective_user.first_name
     
-    # Если нет в context, проверяем в базе данных по telegram_id
-    telegram_id = str(context._user_id) if hasattr(context, '_user_id') else None
+    status_text = f"👤 <b>Пользователь:</b> @{username}\n"
+    status_text += f"🆔 <b>Telegram ID:</b> {telegram_id}\n\n"
     
-    if telegram_id:
-        try:
-            user = supabase_request(f"users?telegram_id=eq.{telegram_id}")
-            if user and len(user) > 0 and user[0].get('family_id'):
-                # Сохраняем в context для будущих запросов
-                context.user_data['telegram_id'] = telegram_id
-                context.user_data['family_id'] = user[0]['family_id']
-                context.user_data['username'] = user[0].get('username')
-                context.user_data['synced'] = True
-                
-                # Находим код семьи
-                family = supabase_request(f"families?id=eq.{user[0]['family_id']}")
+    # Проверяем в базе данных
+    try:
+        user = supabase_request(f"users?telegram_id=eq.{telegram_id}")
+        
+        if user and len(user) > 0:
+            user_data = user[0]
+            family_id = user_data.get('family_id')
+            
+            status_text += "<b>📊 Данные из базы:</b>\n"
+            status_text += f"• ID: {user_data.get('id', 'Нет')}\n"
+            status_text += f"• Семья ID: {family_id or 'Нет'}\n"
+            status_text += f"• Роль: {user_data.get('role', 'Нет')}\n"
+            
+            if family_id:
+                # Получаем информацию о семье
+                family = supabase_request(f"families?id=eq.{family_id}")
                 if family and len(family) > 0:
-                    context.user_data['family_code'] = family[0].get('invite_code')
-                    context.user_data['family_name'] = family[0].get('name')
-                
-                return True, user[0]['family_id']
-        except Exception as e:
-            print(f"Ошибка проверки пользователя: {e}")
+                    family_data = family[0]
+                    status_text += f"• Семья: {family_data.get('name', 'Без названия')}\n"
+                    status_text += f"• Код: {family_data.get('invite_code', 'Нет')}\n"
+            
+            # Проверяем context.user_data
+            if context.user_data:
+                status_text += f"\n<b>🧠 Данные в памяти:</b>\n"
+                for key, value in context.user_data.items():
+                    if value and key != 'telegram_id':
+                        status_text += f"• {key}: {value}\n"
+            
+            # Проверяем подключение
+            is_connected, _ = check_user_connected(context)
+            status_text += f"\n🔗 <b>Подключение:</b> {'✅ Активно' if is_connected else '❌ Нет'}"
+            
+        else:
+            status_text += "❌ <b>Не найден в базе данных</b>\n\n"
+            status_text += "<b>Чтобы подключиться:</b>\n"
+            status_text += "1. Получите код в веб-приложении\n"
+            status_text += "2. Отправьте: <code>/code ВАШ_КОД</code>"
+            
+    except Exception as e:
+        status_text += f"❌ <b>Ошибка проверки:</b> {str(e)[:50]}"
     
-    return False, None
+    status_text += f"\n\n<b>Веб-приложение:</b>\n"
+    status_text += "👉 https://shoppinglist-navy.vercel.app"
+    
+    await update.message.reply_text(status_text, parse_mode='HTML')
 
-async def require_connection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Декоратор для команд, требующих подключения"""
-    is_connected, family_id = check_user_connected(context)
+async def reconnect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /reconnect - переподключиться к семье"""
+    chat_id = update.effective_chat.id
+    telegram_id = str(chat_id)
+    username = update.effective_user.username or update.effective_user.first_name
     
-    if not is_connected:
+    # Очищаем старые данные
+    context.user_data.clear()
+    
+    # Проверяем, есть ли пользователь в базе
+    user = supabase_request(f"users?telegram_id=eq.{telegram_id}")
+    
+    if user and len(user) > 0 and user[0].get('family_id'):
+        family_id = user[0]['family_id']
+        
+        # Получаем информацию о семье
+        family = supabase_request(f"families?id=eq.{family_id}")
+        
+        if family and len(family) > 0:
+            family_data = family[0]
+            
+            # Восстанавливаем context.user_data
+            context.user_data['telegram_id'] = telegram_id
+            context.user_data['family_id'] = family_id
+            context.user_data['family_code'] = family_data.get('invite_code')
+            context.user_data['family_name'] = family_data.get('name')
+            context.user_data['username'] = username
+            context.user_data['synced'] = True
+            
+            await update.message.reply_text(
+                f"✅ <b>Переподключение успешно!</b>\n\n"
+                f"👨‍👩‍👧‍👦 <b>Семья:</b> {family_data.get('name', 'Семья')}\n"
+                f"🔑 <b>Код:</b> <code>{family_data.get('invite_code')}</code>\n"
+                f"👤 <b>Telegram:</b> @{username}\n\n"
+                f"<b>Теперь доступно:</b>\n"
+                f"<code>/list</code> - холодильник\n"
+                f"<code>/add</code> - добавить продукты\n"
+                f"<code>/recipes</code> - рецепты\n"
+                f"<code>/shopping</code> - покупки\n"
+                f"<code>/status</code> - статус",
+                parse_mode='HTML'
+            )
+        else:
+            await update.message.reply_text(
+                "❌ <b>Семья не найдена</b>\n\n"
+                "Используйте: <code>/code ВАШ_КОД</code>",
+                parse_mode='HTML'
+            )
+    else:
         await update.message.reply_text(
-            "🔒 <b>Требуется подключение к семье</b>\n\n"
-            "1. Получите код в веб-приложении\n"
-            "2. Отправьте: <code>/code ВАШ_КОД</code>\n\n"
-            "<b>Веб-приложение:</b>\n"
-            "👉 https://shoppinglist-navy.vercel.app",
+            "❌ <b>Не привязан к семье</b>\n\n"
+            "Используйте: <code>/code ВАШ_КОД</code>",
             parse_mode='HTML'
         )
-        return False
-    
-    return True
-
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /list - показать холодильник"""
@@ -414,7 +515,9 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🔒 <b>Требуется подключение к семье</b>\n\n"
             "1. Получите код в веб-приложении\n"
-            "2. Отправьте: <code>/code ВАШ_КОД</code>",
+            "2. Отправьте: <code>/code ВАШ_КОД</code>\n\n"
+            "<b>Веб-приложение:</b>\n"
+            "👉 https://shoppinglist-navy.vercel.app",
             parse_mode='HTML'
         )
         return
@@ -468,170 +571,144 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Использование:\n"
             "<code>/add молоко</code> - добавить 1 шт\n"
-            "<code>/add молоко 2</code> - добавить 2 шт",
+            "<code>/add молоко 2</code> - добавить 2 шт\n\n"
+            "<b>Несколько продуктов:</b>\n"
+            "<code>/add молоко яйца хлеб</code>\n"
+            "<code>/add молоко 2 яйца 10 хлеб 1</code>",
             parse_mode='HTML'
         )
         return
     
-    product_name = " ".join(context.args)
-    family_id = context.user_data['family_id']
+    user_id = str(update.effective_user.id)
+    products_to_add = []
+    i = 0
+    args = context.args
     
-    print(f"🔄 Добавление продукта: {product_name} для семьи {family_id}")
-    
-    products = supabase_request(f"products?name=ilike.{product_name}")
-    
-    if products and len(products) > 0:
-        product_id = products[0]['id']
-    else:
-        new_product = {
-            "name": product_name,
-            "category": "Другое",
-            "unit": "шт"
-        }
-        result = supabase_request("products", "POST", new_product)
-        if result and len(result) > 0:
-            product_id = result[0]['id']
+    while i < len(args):
+        if i + 1 < len(args) and args[i + 1].isdigit():
+            # Текущее слово - название, следующее - количество
+            products_to_add.append({
+                'name': args[i],
+                'quantity': int(args[i + 1])
+            })
+            i += 2
         else:
-            await update.message.reply_text("❌ Ошибка при создании продукта")
-            return
+            # Только название, количество по умолчанию 1
+            products_to_add.append({
+                'name': args[i],
+                'quantity': 1
+            })
+            i += 1
     
-    fridge_item = {
-        "product_id": product_id,
-        "family_id": family_id,
-        "quantity": 1,
-        "added_by": str(update.effective_user.id)
-    }
-    
-    result = supabase_request("fridge_items", "POST", fridge_item)
-    
-    if result:
+    if not products_to_add:
         await update.message.reply_text(
-            f"✅ Добавлено: <b>{product_name}</b>\n\n"
-            f"Посмотреть холодильник: <code>/list</code>\n"
-            f"Искать рецепты: <code>/recipes</code>",
+            "❌ Не указаны продукты для добавления",
             parse_mode='HTML'
         )
-    else:
-        await update.message.reply_text("❌ Ошибка при добавлении")
-
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /status - проверить статус подключения"""
-    chat_id = update.effective_chat.id
-    telegram_id = str(chat_id)
-    username = update.effective_user.username or update.effective_user.first_name
+        return
     
-    status_text = f"👤 <b>Пользователь:</b> @{username}\n"
-    status_text += f"🆔 <b>Telegram ID:</b> {telegram_id}\n\n"
+    # Показываем процесс
+    if len(products_to_add) > 1:
+        await update.message.reply_text(
+            f"🔄 Добавляю {len(products_to_add)} продуктов...",
+            parse_mode='HTML'
+        )
     
-    # Проверяем в базе данных
-    try:
-        user = supabase_request(f"users?telegram_id=eq.{telegram_id}")
+    added_count = 0
+    errors = []
+    
+    for product_data in products_to_add:
+        product_name = product_data['name']
+        quantity = product_data['quantity']
         
-        if user and len(user) > 0:
-            user_data = user[0]
-            family_id = user_data.get('family_id')
+        try:
+            # Ищем или создаём продукт
+            products = supabase_request(f"products?name=ilike.{product_name}")
             
-            status_text += "<b>📊 Данные из базы:</b>\n"
-            status_text += f"• ID: {user_data.get('id', 'Нет')}\n"
-            status_text += f"• Семья ID: {family_id or 'Нет'}\n"
-            status_text += f"• Роль: {user_data.get('role', 'Нет')}\n"
+            if products and len(products) > 0:
+                product_id = products[0]['id']
+            else:
+                new_product = {
+                    "name": product_name,
+                    "category": "Другое",
+                    "unit": "шт"
+                }
+                result = supabase_request("products", "POST", new_product)
+                if result and len(result) > 0:
+                    product_id = result[0]['id']
+                else:
+                    errors.append(f"{product_name}: ошибка создания")
+                    continue
             
-            if family_id:
-                # Получаем информацию о семье
-                family = supabase_request(f"families?id=eq.{family_id}")
-                if family and len(family) > 0:
-                    family_data = family[0]
-                    status_text += f"• Семья: {family_data.get('name', 'Без названия')}\n"
-                    status_text += f"• Код: {family_data.get('invite_code', 'Нет')}\n"
+            # Добавляем в холодильник
+            fridge_item = {
+                "product_id": product_id,
+                "family_id": family_id,
+                "quantity": quantity,
+                "added_by": user_id
+            }
             
-            # Проверяем context.user_data
-            if context.user_data:
-                status_text += f"\n<b>🧠 Данные в памяти:</b>\n"
-                for key, value in context.user_data.items():
-                    if value:
-                        status_text += f"• {key}: {value}\n"
+            result = supabase_request("fridge_items", "POST", fridge_item)
             
-            # Проверяем подключение
-            is_connected, _ = check_user_connected(context)
-            status_text += f"\n🔗 <b>Подключение:</b> {'✅ Активно' if is_connected else '❌ Нет'}"
-            
-        else:
-            status_text += "❌ <b>Не найден в базе данных</b>\n\n"
-            status_text += "<b>Чтобы подключиться:</b>\n"
-            status_text += "1. Получите код в веб-приложении\n"
-            status_text += "2. Отправьте: <code>/code ВАШ_КОД</code>"
-            
-    except Exception as e:
-        status_text += f"❌ <b>Ошибка проверки:</b> {str(e)[:50]}"
+            if result:
+                added_count += 1
+            else:
+                errors.append(f"{product_name}: ошибка добавления")
+                
+        except Exception as e:
+            errors.append(f"{product_name}: {str(e)[:50]}")
     
-    status_text += f"\n\n<b>Веб-приложение:</b>\n"
-    status_text += "👉 https://shoppinglist-navy.vercel.app"
-    
-    await update.message.reply_text(status_text, parse_mode='HTML')
-
-async def reconnect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /reconnect - переподключиться к семье"""
-    chat_id = update.effective_chat.id
-    telegram_id = str(chat_id)
-    
-    # Очищаем старые данные
-    context.user_data.clear()
-    
-    # Проверяем, есть ли пользователь в базе
-    user = supabase_request(f"users?telegram_id=eq.{telegram_id}")
-    
-    if user and len(user) > 0 and user[0].get('family_id'):
-        family_id = user[0]['family_id']
-        
-        # Получаем информацию о семье
-        family = supabase_request(f"families?id=eq.{family_id}")
-        
-        if family and len(family) > 0:
-            family_data = family[0]
-            
-            # Восстанавливаем context.user_data
-            context.user_data['telegram_id'] = telegram_id
-            context.user_data['family_id'] = family_id
-            context.user_data['family_code'] = family_data.get('invite_code')
-            context.user_data['family_name'] = family_data.get('name')
-            context.user_data['username'] = user[0].get('username')
-            context.user_data['synced'] = True
-            
+    # Формируем ответ
+    if added_count > 0:
+        if len(products_to_add) == 1:
+            product_name = products_to_add[0]['name']
+            quantity = products_to_add[0]['quantity']
             await update.message.reply_text(
-                f"✅ <b>Переподключение успешно!</b>\n\n"
-                f"👨‍👩‍👧‍👦 <b>Семья:</b> {family_data.get('name', 'Семья')}\n"
-                f"🔑 <b>Код:</b> <code>{family_data.get('invite_code')}</code>\n\n"
-                f"<b>Теперь доступно:</b>\n"
-                f"<code>/list</code> - холодильник\n"
-                f"<code>/add</code> - добавить продукты\n"
-                f"<code>/recipes</code> - рецепты\n"
-                f"<code>/status</code> - статус",
+                f"✅ Добавлено: <b>{product_name}</b> ({quantity} шт)\n\n"
+                f"Посмотреть холодильник: <code>/list</code>\n"
+                f"Искать рецепты: <code>/recipes</code>",
                 parse_mode='HTML'
             )
         else:
+            success_message = f"✅ Добавлено <b>{added_count}</b> из <b>{len(products_to_add)}</b> продуктов:\n\n"
+            
+            for product in products_to_add[:10]:
+                success_message += f"• {product['name']} ({product['quantity']} шт)\n"
+            
+            if len(products_to_add) > 10:
+                success_message += f"• и ещё {len(products_to_add) - 10}...\n"
+            
+            success_message += f"\nПосмотреть всё: <code>/list</code>"
+            
+            if errors:
+                success_message += f"\n\n⚠️ Ошибки ({len(errors)}):\n"
+                for error in errors[:3]:
+                    success_message += f"• {error}\n"
+                if len(errors) > 3:
+                    success_message += f"• и ещё {len(errors) - 3} ошибок"
+            
             await update.message.reply_text(
-                "❌ <b>Семья не найдена</b>\n\n"
-                "Используйте: <code>/code ВАШ_КОД</code>",
+                success_message,
                 parse_mode='HTML'
             )
     else:
         await update.message.reply_text(
-            "❌ <b>Не привязан к семье</b>\n\n"
-            "Используйте: <code>/code ВАШ_КОД</code>",
+            "❌ Не удалось добавить ни одного продукта",
             parse_mode='HTML'
         )
 
 async def shopping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /shopping - список покупок"""
-    if 'family_id' not in context.user_data:
+    # Проверяем подключение
+    is_connected, family_id = check_user_connected(context)
+    
+    if not is_connected:
         await update.message.reply_text(
-            "Сначала присоединитесь к семье:\n"
-            "<code>/code TEST789</code>",
+            "🔒 <b>Требуется подключение к семье</b>\n\n"
+            "Сначала присоединитесь: <code>/code ВАШ_КОД</code>",
             parse_mode='HTML'
         )
         return
-    
-    family_id = context.user_data['family_id']
     
     shopping_items = supabase_request(
         f"shopping_list?family_id=eq.{family_id}"
@@ -671,7 +748,10 @@ async def recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /recipes - ИИ-помощник по рецептам"""
     chat_id = update.effective_chat.id
     
-    if 'family_id' not in context.user_data:
+    # Проверяем подключение
+    is_connected, family_id = check_user_connected(context)
+    
+    if not is_connected:
         await update.message.reply_text(
             "🍳 <b>ИИ-помощник по рецептам</b>\n\n"
             "Сначала присоединитесь к семье:\n"
@@ -687,7 +767,6 @@ async def recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'ingredients': []
     }
     
-    family_id = context.user_data['family_id']
     fridge_items = supabase_request(
         f"fridge_items?family_id=eq.{family_id}"
         "&select=quantity,products(name,unit)"
@@ -739,7 +818,10 @@ async def recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def quick_recipes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /quick - быстрые рецепты (менее 30 минут)"""
-    if 'family_id' not in context.user_data:
+    # Проверяем подключение
+    is_connected, family_id = check_user_connected(context)
+    
+    if not is_connected:
         await update.message.reply_text(
             "Сначала присоединитесь к семье:\n"
             "<code>/code ВАШ_КОД</code>",
@@ -813,30 +895,35 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "📚 <b>Помощь по командам</b>\n\n"
         
-        "<b>Основные:</b>\n"
-        "<code>/start</code> - начать\n"
+        "<b>Для начала:</b>\n"
+        "1. Получите код в веб-приложении\n"
+        "2. Отправьте боту: <code>/code ВАШ_КОД</code>\n\n"
+        
+        "<b>Основные команды:</b>\n"
+        "<code>/start</code> - начать диалог\n"
         "<code>/code КОД</code> - привязать Telegram\n"
+        "<code>/status</code> - проверить подключение\n"
+        "<code>/reconnect</code> - переподключиться\n"
         "<code>/help</code> - эта справка\n\n"
         
-        "<b>Холодильник:</b>\n"
+        "<b>После привязки:</b>\n"
         "<code>/list</code> - что есть в холодильнике\n"
-        "<code>/add продукт</code> - добавить продукт\n\n"
+        "<code>/add продукт</code> - добавить продукт\n"
+        "<code>/add продукт 10</code> - добавить с количеством\n"
+        "<code>/add продукт1 продукт2</code> - несколько сразу\n\n"
         
-        "<b>Рецепты (ИИ-помощник):</b>\n"
-        "<code>/recipes</code> - персонализированные рецепты\n"
+        "<b>Рецепты:</b>\n"
+        "<code>/recipes</code> - ИИ подберёт рецепты по вашим продуктам\n"
         "<code>/quick</code> - быстрые рецепты (< 30 мин)\n\n"
         
         "<b>Покупки:</b>\n"
         "<code>/shopping</code> - список покупок\n\n"
         
-        "<b>ИИ-помощник (/recipes):</b>\n"
-        "1. Смотрит что в вашем холодильнике\n"
-        "2. Спрашивает время на готовку\n"
-        "3. Предлагает 3-4 подходящих рецепта\n"
-        "4. Даёт ссылки на полные рецепты\n\n"
-        
-        "<b>Веб-приложение:</b>\n"
-        "👉 https://shoppinglist-navy.vercel.app"
+        "<b>Проблемы?</b>\n"
+        "1. Если команды не работают, используйте <code>/reconnect</code>\n"
+        "2. Или отправьте код ещё раз: <code>/code ВАШ_КОД</code>\n"
+        "3. Проверьте статус: <code>/status</code>\n"
+        "4. Веб-приложение: https://shoppinglist-navy.vercel.app"
     )
     
     await update.message.reply_text(help_text, parse_mode='HTML')
@@ -871,6 +958,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message=query.message
         )
         await recipes_command(fake_update, context)
+    elif query.data == 'status':
+        # Вызываем команду статуса
+        fake_update = Update(
+            update.update_id,
+            message=query.message
+        )
+        await status_command(fake_update, context)
 
 async def ai_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик кнопок ИИ-помощника"""
@@ -991,15 +1085,15 @@ def main():
         
         # Регистрируем команды
         application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("code", code_command))
-    application.add_handler(CommandHandler("reconnect", reconnect_command))  # Новая
-    application.add_handler(CommandHandler("status", status_command))
-    application.add_handler(CommandHandler("list", list_command))
-    application.add_handler(CommandHandler("add", add_command))
-    application.add_handler(CommandHandler("shopping", shopping_command))
-    application.add_handler(CommandHandler("recipes", recipes_command))
-    application.add_handler(CommandHandler("quick", quick_recipes_command))
-    application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("code", code_command))
+        application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("reconnect", reconnect_command))
+        application.add_handler(CommandHandler("list", list_command))
+        application.add_handler(CommandHandler("add", add_command))
+        application.add_handler(CommandHandler("shopping", shopping_command))
+        application.add_handler(CommandHandler("recipes", recipes_command))
+        application.add_handler(CommandHandler("quick", quick_recipes_command))
+        application.add_handler(CommandHandler("help", help_command))
         
         # Обработчики кнопок
         application.add_handler(CallbackQueryHandler(button_handler))
@@ -1012,6 +1106,8 @@ def main():
         print("📱 Доступные команды:")
         print("   /start - начать")
         print("   /code КОД - присоединиться")
+        print("   /status - проверить подключение")
+        print("   /reconnect - переподключиться")
         print("   /list - холодильник")
         print("   /add - добавить продукт")
         print("   /shopping - покупки")
