@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase, ShoppingItem } from '@/lib/supabase'
 import { TabBar } from '@/components/ui/TabBar'
 import { ShoppingList } from '@/components/shopping/ShoppingList'
+import { BarcodeScanner } from '@/components/scanner/BarcodeScanner'
+import { ScanResultModal } from '@/components/scanner/ScanResultModal'
 
 const TABS = [
   { id: 'products', label: 'Продукты', icon: '🥑' },
@@ -14,6 +16,8 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState('products')
   const [items, setItems] = useState<ShoppingItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [showScanner, setShowScanner] = useState(false)
+  const [scannedBarcode, setScannedBarcode] = useState<string | null>(null)
 
   // Загрузка списка
   const loadItems = useCallback(async () => {
@@ -36,16 +40,59 @@ export default function HomePage() {
     loadItems()
   }, [loadItems])
 
+  // Обработчик сканирования
+  const handleScan = (barcode: string) => {
+    setShowScanner(false)
+    setScannedBarcode(barcode)
+  }
+
+  // Добавление отсканированного товара
+  const handleScannedAdd = async (item: {
+    name: string
+    category: 'products' | 'household'
+    icon: string
+  }) => {
+    // 1. Создаём продукт
+    const { data: newProduct } = await supabase
+      .from('products')
+      .insert({
+        name: item.name,
+        category: item.category,
+        icon: item.icon,
+        barcode: scannedBarcode,
+      })
+      .select()
+      .single()
+
+    if (newProduct) {
+      // 2. Добавляем в список
+      const { data: addedItem } = await supabase
+        .from('shopping_list')
+        .insert({
+          product_id: newProduct.id,
+          quantity: 1,
+          priority: 0,
+          purchased: false,
+          category: item.category,
+        })
+        .select('*, products(*)')
+        .single()
+
+      if (addedItem) {
+        setItems((prev) => [addedItem as ShoppingItem, ...prev])
+      }
+    }
+
+    setScannedBarcode(null)
+  }
+
   // Переключение "куплено"
   const handleToggle = async (id: string, purchased: boolean) => {
     const purchasedAt = purchased ? new Date().toISOString() : undefined
 
-    // Оптимистичное обновление
     setItems((prev) =>
       prev.map((item) =>
-        item.id === id
-          ? { ...item, purchased, purchased_at: purchasedAt }
-          : item
+        item.id === id ? { ...item, purchased, purchased_at: purchasedAt } : item
       )
     )
 
@@ -59,7 +106,7 @@ export default function HomePage() {
 
     if (error) {
       console.error('Ошибка обновления:', error)
-      loadItems() // откат при ошибке
+      loadItems()
     }
   }
 
@@ -75,7 +122,7 @@ export default function HomePage() {
     }
   }
 
-  // Добавление товара
+  // Добавление товара вручную
   const handleAdd = async (newItem: {
     name: string
     quantity: number
@@ -83,7 +130,6 @@ export default function HomePage() {
     priority: number
     notes: string
   }) => {
-    // 1. Ищем или создаём продукт
     const { data: existingProduct } = await supabase
       .from('products')
       .select('*')
@@ -113,7 +159,6 @@ export default function HomePage() {
       productId = newProduct.id
     }
 
-    // 2. Добавляем в список покупок
     const { data: addedItem, error } = await supabase
       .from('shopping_list')
       .insert({
@@ -132,7 +177,6 @@ export default function HomePage() {
       return
     }
 
-    // 3. Обновляем локальный список
     if (addedItem) {
       setItems((prev) => [addedItem as ShoppingItem, ...prev])
     }
@@ -146,9 +190,19 @@ export default function HomePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 pb-24">
       {/* Заголовок */}
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold text-gray-800">🍏 Семейный холодильник</h1>
-        <p className="text-sm text-gray-400 mt-1">Умный список покупок</p>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">🍏 Семейный холодильник</h1>
+          <p className="text-sm text-gray-400 mt-1">Умный список покупок</p>
+        </div>
+        {/* Кнопка сканера */}
+        <button
+          onClick={() => setShowScanner(true)}
+          className="btn btn-outline text-sm py-2 px-4 gap-2"
+        >
+          <span className="text-lg">📷</span>
+          <span className="hidden sm:inline">Сканер</span>
+        </button>
       </div>
 
       {/* Вкладки */}
@@ -188,11 +242,24 @@ export default function HomePage() {
           onAdd={handleAdd}
         />
       )}
+
+      {/* Сканер (модальное окно) */}
+      {showScanner && (
+        <BarcodeScanner onScan={handleScan} onClose={() => setShowScanner(false)} />
+      )}
+
+      {/* Результат сканирования */}
+      {scannedBarcode && (
+        <ScanResultModal
+          barcode={scannedBarcode}
+          onAdd={handleScannedAdd}
+          onClose={() => setScannedBarcode(null)}
+        />
+      )}
     </div>
   )
 }
 
-// Вспомогательная функция
 function getIconForCategory(category: string): string {
   const icons: Record<string, string> = {
     products: '🛒',
