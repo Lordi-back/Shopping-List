@@ -2,30 +2,97 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-rgb: 243, 244, 246;
-}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-rgb));
-  -webkit-tap-highlight-color: transparent;
-}
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
 
-/* Для мобильных */
-@media (max-width: 640px) {
-  input, button {
-    font-size: 16px; /* Отключает zoom в iOS */
+  body {
+    @apply bg-cream text-gray-800 font-sans antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Убираем синюю подсветку на мобилках */
+  input, button, textarea, select {
+    @apply outline-none focus:outline-none;
   }
 }
 
-/* Анимации */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+@layer components {
+  /* Скруглённая карточка */
+  .card {
+    @apply bg-white rounded-2xl shadow-card p-4 transition-shadow duration-200;
+  }
+  .card:hover {
+    @apply shadow-card-hover;
+  }
+  .card:active {
+    @apply scale-[0.98] transition-transform duration-100;
+  }
+
+  /* Кнопки */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 active:scale-95;
+  }
+  .btn-primary {
+    @apply bg-fridge-500 text-white hover:bg-fridge-600;
+  }
+  .btn-warm {
+    @apply bg-warm-500 text-white hover:bg-warm-600;
+  }
+  .btn-outline {
+    @apply border-2 border-fridge-200 text-fridge-500 hover:bg-fridge-50;
+  }
+  .btn-ghost {
+    @apply text-gray-500 hover:bg-gray-100;
+  }
+
+  /* Инпут */
+  .input {
+    @apply w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-sm transition-all duration-200;
+  }
+  .input:focus {
+    @apply border-fridge-300 bg-white shadow-sm;
+  }
+
+  /* Бейдж (категория) */
+  .badge {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium;
+  }
+  .badge-products {
+    @apply bg-green-100 text-green-700;
+  }
+  .badge-household {
+    @apply bg-blue-100 text-blue-700;
+  }
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.3s ease-out;
+@layer utilities {
+  /* Скроллбар */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #e5e7eb transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #e5e7eb;
+    border-radius: 20px;
+  }
+
+  /* Анимация появления */
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-out;
+  }
 }
