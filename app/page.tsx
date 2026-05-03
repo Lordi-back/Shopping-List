@@ -200,19 +200,25 @@ export default function HomePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 pb-24">
       {/* Заголовок */}
-      <div className="flex items-center justify-between mb-4">
+     <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">🍏 Семейный холодильник</h1>
           <p className="text-sm text-gray-400 mt-1">Умный список покупок</p>
         </div>
-        {/* Кнопка сканера */}
-        <button
-          onClick={() => setShowScanner(true)}
-          className="btn btn-outline text-sm py-2 px-4 gap-2"
-        >
-          <span className="text-lg">📷</span>
-          <span className="hidden sm:inline">Сканер</span>
-        </button>
+        <div className="flex gap-2">
+          {/* Кнопка подписки */}
+          <a href="/subscription" className="btn btn-ghost text-sm py-2 px-3">
+            🏆
+          </a>
+          {/* Кнопка сканера */}
+          <button
+            onClick={() => setShowScanner(true)}
+            className="btn btn-outline text-sm py-2 px-4 gap-2"
+          >
+            <span className="text-lg">📷</span>
+            <span className="hidden sm:inline">Сканер</span>
+          </button>
+        </div>
       </div>
 
       {/* Вкладки */}
