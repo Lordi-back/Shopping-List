@@ -7,6 +7,8 @@ import { ShoppingList } from '@/components/shopping/ShoppingList'
 import { BarcodeScanner } from '@/components/scanner/BarcodeScanner'
 import { ScanResultModal } from '@/components/scanner/ScanResultModal'
 import { useToast } from '@/components/ui/ToastProvider'
+import { ReminderBanner } from '@/components/reminders/ReminderBanner'
+import { recordPurchase } from '@/lib/prediction-engine'
 
 const TABS = [
   { id: 'products', label: 'Продукты', icon: '🥑' },
@@ -87,17 +89,19 @@ export default function HomePage() {
     setScannedBarcode(null)
   }
 
-  // Переключение "куплено"
+  // Переключение "куплено"    
   const handleToggle = async (id: string, purchased: boolean) => {
     const item = items.find((i) => i.id === id)
     const purchasedAt = purchased ? new Date().toISOString() : undefined
 
+    // Оптимистичное обновление UI
     setItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, purchased, purchased_at: purchasedAt } : item
+      prev.map((i) =>
+        i.id === id ? { ...i, purchased, purchased_at: purchasedAt } : i
       )
     )
 
+    // Обновляем в БД
     const { error } = await supabase
       .from('shopping_list')
       .update({
@@ -108,8 +112,13 @@ export default function HomePage() {
 
     if (error) {
       console.error('Ошибка обновления:', error)
-      loadItems()
-    } else if (purchased && item?.products?.name) {
+      loadItems() // откат при ошибке
+      return
+    }
+
+    // Успех — записываем в историю и показываем тост
+    if (purchased && item?.products?.name) {
+      recordPurchase('demo-user', item.products.name, item.category)
       showToast('success', `${item.products.icon || '✅'} ${item.products.name} куплен!`)
     }
   }
@@ -232,7 +241,19 @@ export default function HomePage() {
           onChange={setActiveTab}
         />
       </div>
-
+{/* Напоминания */}
+      <ReminderBanner
+        onAddItem={(name) => {
+          handleAdd({
+            name,
+            quantity: 1,
+            unit: 'шт.',
+            priority: 0,
+            notes: '',
+          })
+        }}
+        onDismiss={() => {}}
+      />
       {/* Список */}
       {loading ? (
         <div className="space-y-3">
