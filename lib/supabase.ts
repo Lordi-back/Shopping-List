@@ -44,7 +44,7 @@ export type FridgeItem = {
   added_by?: string
   notes?: string
   created_at: string
-  updated_at?: string
+ purchased_at?: string | null
   products?: Product
 }
 
