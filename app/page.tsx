@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { supabase, ShoppingItem, Product } from '@/lib/supabase'
+import { supabase, ShoppingItem } from '@/lib/supabase'
 import { TabBar } from '@/components/ui/TabBar'
 import { ShoppingList } from '@/components/shopping/ShoppingList'
 
@@ -27,7 +27,7 @@ export default function HomePage() {
     if (error) {
       console.error('Ошибка загрузки:', error)
     } else {
-      setItems(data || [])
+      setItems((data as ShoppingItem[]) || [])
     }
     setLoading(false)
   }, [])
@@ -38,16 +38,23 @@ export default function HomePage() {
 
   // Переключение "куплено"
   const handleToggle = async (id: string, purchased: boolean) => {
+    const purchasedAt = purchased ? new Date().toISOString() : undefined
+
     // Оптимистичное обновление
     setItems((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, purchased, purchased_at: purchased ? new Date().toISOString() : null } : item
+        item.id === id
+          ? { ...item, purchased, purchased_at: purchasedAt }
+          : item
       )
     )
 
     const { error } = await supabase
       .from('shopping_list')
-      .update({ purchased, purchased_at: purchased ? new Date().toISOString() : null })
+      .update({
+        purchased,
+        purchased_at: purchased ? new Date().toISOString() : null,
+      })
       .eq('id', id)
 
     if (error) {
@@ -60,10 +67,7 @@ export default function HomePage() {
   const handleDelete = async (id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id))
 
-    const { error } = await supabase
-      .from('shopping_list')
-      .delete()
-      .eq('id', id)
+    const { error } = await supabase.from('shopping_list').delete().eq('id', id)
 
     if (error) {
       console.error('Ошибка удаления:', error)
@@ -72,7 +76,13 @@ export default function HomePage() {
   }
 
   // Добавление товара
-  const handleAdd = async (newItem: { name: string; quantity: number; unit: string; priority: number; notes: string }) => {
+  const handleAdd = async (newItem: {
+    name: string
+    quantity: number
+    unit: string
+    priority: number
+    notes: string
+  }) => {
     // 1. Ищем или создаём продукт
     const { data: existingProduct } = await supabase
       .from('products')
@@ -124,26 +134,30 @@ export default function HomePage() {
 
     // 3. Обновляем локальный список
     if (addedItem) {
-      setItems((prev) => [addedItem, ...prev])
+      setItems((prev) => [addedItem as ShoppingItem, ...prev])
     }
+  }
+
+  const counts = {
+    products: items.filter((i) => (i.category || 'products') === 'products' && !i.purchased).length,
+    household: items.filter((i) => i.category === 'household' && !i.purchased).length,
   }
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 pb-24">
       {/* Заголовок */}
       <div className="mb-4">
-        <h1 className="text-2xl font-bold text-gray-800">
-          🍏 Семейный холодильник
-        </h1>
-        <p className="text-sm text-gray-400 mt-1">
-          Умный список покупок
-        </p>
+        <h1 className="text-2xl font-bold text-gray-800">🍏 Семейный холодильник</h1>
+        <p className="text-sm text-gray-400 mt-1">Умный список покупок</p>
       </div>
 
       {/* Вкладки */}
       <div className="mb-4">
         <TabBar
-          tabs={TABS}
+          tabs={TABS.map((tab) => ({
+            ...tab,
+            count: counts[tab.id as keyof typeof counts] || 0,
+          }))}
           activeTab={activeTab}
           onChange={setActiveTab}
         />
