@@ -6,6 +6,7 @@ import { TabBar } from '@/components/ui/TabBar'
 import { ShoppingList } from '@/components/shopping/ShoppingList'
 import { BarcodeScanner } from '@/components/scanner/BarcodeScanner'
 import { ScanResultModal } from '@/components/scanner/ScanResultModal'
+import { useToast } from '@/components/ui/ToastProvider'
 
 const TABS = [
   { id: 'products', label: 'Продукты', icon: '🥑' },
@@ -18,6 +19,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [showScanner, setShowScanner] = useState(false)
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null)
+  const { showToast } = useToast()
 
   // Загрузка списка
   const loadItems = useCallback(async () => {
@@ -52,7 +54,6 @@ export default function HomePage() {
     category: 'products' | 'household'
     icon: string
   }) => {
-    // 1. Создаём продукт
     const { data: newProduct } = await supabase
       .from('products')
       .insert({
@@ -65,7 +66,6 @@ export default function HomePage() {
       .single()
 
     if (newProduct) {
-      // 2. Добавляем в список
       const { data: addedItem } = await supabase
         .from('shopping_list')
         .insert({
@@ -80,6 +80,7 @@ export default function HomePage() {
 
       if (addedItem) {
         setItems((prev) => [addedItem as ShoppingItem, ...prev])
+        showToast('success', `${item.icon} ${item.name} добавлен в ${item.category === 'products' ? 'Продукты' : 'Быт'}`)
       }
     }
 
@@ -88,6 +89,7 @@ export default function HomePage() {
 
   // Переключение "куплено"
   const handleToggle = async (id: string, purchased: boolean) => {
+    const item = items.find((i) => i.id === id)
     const purchasedAt = purchased ? new Date().toISOString() : undefined
 
     setItems((prev) =>
@@ -107,11 +109,14 @@ export default function HomePage() {
     if (error) {
       console.error('Ошибка обновления:', error)
       loadItems()
+    } else if (purchased && item?.products?.name) {
+      showToast('success', `${item.products.icon || '✅'} ${item.products.name} куплен!`)
     }
   }
 
   // Удаление товара
   const handleDelete = async (id: string) => {
+    const item = items.find((i) => i.id === id)
     setItems((prev) => prev.filter((item) => item.id !== id))
 
     const { error } = await supabase.from('shopping_list').delete().eq('id', id)
@@ -119,6 +124,8 @@ export default function HomePage() {
     if (error) {
       console.error('Ошибка удаления:', error)
       loadItems()
+    } else if (item?.products?.name) {
+      showToast('info', `${item.products.name} удалён из списка`)
     }
   }
 
@@ -154,6 +161,7 @@ export default function HomePage() {
 
       if (productError || !newProduct) {
         console.error('Ошибка создания продукта:', productError)
+        showToast('error', 'Не удалось добавить товар')
         return
       }
       productId = newProduct.id
@@ -174,11 +182,13 @@ export default function HomePage() {
 
     if (error) {
       console.error('Ошибка добавления:', error)
+      showToast('error', 'Не удалось добавить товар')
       return
     }
 
     if (addedItem) {
       setItems((prev) => [addedItem as ShoppingItem, ...prev])
+      showToast('success', `${getIconForCategory(activeTab)} ${newItem.name} добавлен в ${activeTab === 'products' ? 'Продукты' : 'Быт'}`)
     }
   }
 
