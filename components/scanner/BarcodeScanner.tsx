@@ -20,7 +20,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
 
     reader
       .decodeFromVideoDevice(
-        undefined, // авто-выбор камеры (обычно задняя)
+        null, // авто-выбор камеры (обычно задняя)
         videoRef.current!,
         (result, err) => {
           if (result && !scanned) {
