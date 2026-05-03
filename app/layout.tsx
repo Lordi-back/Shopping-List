@@ -1,12 +1,21 @@
-import './globals.css' // Если есть стили
-import { Inter } from 'next/font/google'
-import React from 'react'
+import type { Metadata, Viewport } from 'next'
+import './globals.css'
 
-const inter = Inter({ subsets: ['latin', 'cyrillic'] })
-
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Семейный холодильник',
-  description: 'Общий список покупок для всей семьи',
+  description: 'Умный список покупок с AI-ассистентом',
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/favicon.ico',
+  },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#2D6A4F',
 }
 
 export default function RootLayout({
@@ -15,8 +24,12 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ru" className={inter.className}>
-      <body>{children}</body>
+    <html lang="ru">
+      <body>
+        <main className="min-h-screen">
+          {children}
+        </main>
+      </body>
     </html>
   )
 }
