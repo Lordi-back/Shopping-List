@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { ToastProvider } from '@/components/ui/ToastProvider'
+import { BottomNav } from '@/components/ui/BottomNav'
 
 export const metadata: Metadata = {
   title: 'Семейный холодильник',
@@ -28,9 +29,10 @@ export default function RootLayout({
     <html lang="ru">
       <body>
         <ToastProvider>
-          <main className="min-h-screen">
+          <main className="min-h-screen pb-20">
             {children}
           </main>
+          <BottomNav />
         </ToastProvider>
       </body>
     </html>
