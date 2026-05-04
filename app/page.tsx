@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase, ShoppingItem } from '@/lib/supabase'
 import { TabBar } from '@/components/ui/TabBar'
 import { ShoppingList } from '@/components/shopping/ShoppingList'
@@ -9,6 +9,7 @@ import { ScanResultModal } from '@/components/scanner/ScanResultModal'
 import { useToast } from '@/components/ui/ToastProvider'
 import { ReminderBanner } from '@/components/reminders/ReminderBanner'
 import { recordPurchase } from '@/lib/prediction-engine'
+import { useStore } from '@/lib/store'
 
 const TABS = [
   { id: 'products', label: 'Продукты', icon: '🥑' },
@@ -17,32 +18,59 @@ const TABS = [
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState('products')
-  const [items, setItems] = useState<ShoppingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showScanner, setShowScanner] = useState(false)
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null)
   const { showToast } = useToast()
+  const { items, loadItems } = useStore()
 
-  // Загрузка списка
-  const loadItems = useCallback(async () => {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from('shopping_list')
-      .select('*, products(*)')
-      .order('priority', { ascending: false })
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Ошибка загрузки:', error)
-    } else {
-      setItems((data as ShoppingItem[]) || [])
-    }
-    setLoading(false)
-  }, [])
-
+  // Загрузка списка при первом входе
   useEffect(() => {
-    loadItems()
+    loadItems().then(() => setLoading(false))
   }, [loadItems])
+
+  // Realtime подписка
+  useEffect(() => {
+    const channel = supabase
+      .channel('shopping-list-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shopping_list' },
+        (payload) => {
+          const eventType = payload.eventType
+          const newItem = payload.new as ShoppingItem
+          const oldItem = payload.old as ShoppingItem
+
+          switch (eventType) {
+            case 'INSERT':
+              if (!items.find((i) => i.id === newItem.id)) {
+                loadItems()
+              }
+              showToast('success', `🛒 ${newItem.products?.name || 'Товар'} добавлен в список`)
+              break
+
+            case 'UPDATE':
+              loadItems()
+              if (newItem.purchased && !oldItem?.purchased) {
+                showToast('success', `✅ ${newItem.products?.name || 'Товар'} куплен!`)
+              }
+              break
+
+            case 'DELETE':
+              loadItems()
+              if (oldItem?.products?.name) {
+                showToast('info', `🗑️ ${oldItem.products.name} удалён из списка`)
+              }
+              break
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [showToast, items.length])
 
   // Обработчик сканирования
   const handleScan = (barcode: string) => {
@@ -68,40 +96,32 @@ export default function HomePage() {
       .single()
 
     if (newProduct) {
-      const { data: addedItem } = await supabase
+      const { error } = await supabase
         .from('shopping_list')
         .insert({
           product_id: newProduct.id,
           quantity: 1,
-          priority: 0,
+          priority: 1,
           purchased: false,
           category: item.category,
         })
-        .select('*, products(*)')
-        .single()
 
-      if (addedItem) {
-        setItems((prev) => [addedItem as ShoppingItem, ...prev])
+      if (error) {
+        showToast('error', `Ошибка: ${error.message}`)
+      } else {
         showToast('success', `${item.icon} ${item.name} добавлен в ${item.category === 'products' ? 'Продукты' : 'Быт'}`)
+        loadItems()
       }
     }
 
     setScannedBarcode(null)
   }
 
-  // Переключение "куплено"    
+  // Переключение "куплено"
   const handleToggle = async (id: string, purchased: boolean) => {
     const item = items.find((i) => i.id === id)
     const purchasedAt = purchased ? new Date().toISOString() : undefined
 
-    // Оптимистичное обновление UI
-    setItems((prev) =>
-      prev.map((i) =>
-        i.id === id ? { ...i, purchased, purchased_at: purchasedAt } : i
-      )
-    )
-
-    // Обновляем в БД
     const { error } = await supabase
       .from('shopping_list')
       .update({
@@ -112,21 +132,20 @@ export default function HomePage() {
 
     if (error) {
       console.error('Ошибка обновления:', error)
-      loadItems() // откат при ошибке
+      loadItems()
       return
     }
 
-    // Успех — записываем в историю и показываем тост
     if (purchased && item?.products?.name) {
       recordPurchase('demo-user', item.products.name, item.category)
       showToast('success', `${item.products.icon || '✅'} ${item.products.name} куплен!`)
+      loadItems()
     }
   }
 
   // Удаление товара
   const handleDelete = async (id: string) => {
     const item = items.find((i) => i.id === id)
-    setItems((prev) => prev.filter((item) => item.id !== id))
 
     const { error } = await supabase.from('shopping_list').delete().eq('id', id)
 
@@ -135,6 +154,7 @@ export default function HomePage() {
       loadItems()
     } else if (item?.products?.name) {
       showToast('info', `${item.products.name} удалён из списка`)
+      loadItems()
     }
   }
 
@@ -146,11 +166,11 @@ export default function HomePage() {
     priority: number
     notes: string
   }) => {
-   const { data: existingProduct } = await supabase
+    const { data: existingProduct } = await supabase
       .from('products')
       .select('*')
       .ilike('name', newItem.name)
-      .maybeSingle() 
+      .maybeSingle()
 
     let productId: string
 
@@ -176,7 +196,7 @@ export default function HomePage() {
       productId = newProduct.id
     }
 
-    const { data: addedItem, error } = await supabase
+    const { error } = await supabase
       .from('shopping_list')
       .insert({
         product_id: productId,
@@ -186,8 +206,6 @@ export default function HomePage() {
         category: activeTab,
         notes: newItem.notes || null,
       })
-      .select('*, products(*)')
-      .single()
 
     if (error) {
       console.error('Ошибка добавления:', error)
@@ -195,10 +213,8 @@ export default function HomePage() {
       return
     }
 
-    if (addedItem) {
-      setItems((prev) => [addedItem as ShoppingItem, ...prev])
-      showToast('success', `${getIconForCategory(activeTab)} ${newItem.name} добавлен в ${activeTab === 'products' ? 'Продукты' : 'Быт'}`)
-    }
+    showToast('success', `${getIconForCategory(activeTab)} ${newItem.name} добавлен в ${activeTab === 'products' ? 'Продукты' : 'Быт'}`)
+    loadItems()
   }
 
   const counts = {
@@ -209,17 +225,15 @@ export default function HomePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 pb-24">
       {/* Заголовок */}
-     <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">🍏 Семейный холодильник</h1>
           <p className="text-sm text-gray-400 mt-1">Умный список покупок</p>
         </div>
         <div className="flex gap-2">
-          {/* Кнопка подписки */}
           <a href="/subscription" className="btn btn-ghost text-sm py-2 px-3">
             🏆
           </a>
-          {/* Кнопка сканера */}
           <button
             onClick={() => setShowScanner(true)}
             className="btn btn-outline text-sm py-2 px-4 gap-2"
@@ -241,7 +255,8 @@ export default function HomePage() {
           onChange={setActiveTab}
         />
       </div>
-{/* Напоминания */}
+
+      {/* Напоминания */}
       <ReminderBanner
         onAddItem={(name) => {
           handleAdd({
@@ -254,6 +269,7 @@ export default function HomePage() {
         }}
         onDismiss={() => {}}
       />
+
       {/* Список */}
       {loading ? (
         <div className="space-y-3">
@@ -280,7 +296,7 @@ export default function HomePage() {
         />
       )}
 
-      {/* Сканер (модальное окно) */}
+      {/* Сканер */}
       {showScanner && (
         <BarcodeScanner onScan={handleScan} onClose={() => setShowScanner(false)} />
       )}
