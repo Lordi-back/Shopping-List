@@ -170,7 +170,7 @@ export default function HomePage() {
 
       if (productError || !newProduct) {
         console.error('Ошибка создания продукта:', productError)
-        showToast('error', 'Не удалось добавить товар')
+        showToast('error', `Ошибка создания: ${productError?.message || 'неизвестно'}`)
         return
       }
       productId = newProduct.id
@@ -191,7 +191,7 @@ export default function HomePage() {
 
     if (error) {
       console.error('Ошибка добавления:', error)
-      showToast('error', 'Не удалось добавить товар')
+      showToast('error', `Ошибка: ${error.message}`)
       return
     }
 
