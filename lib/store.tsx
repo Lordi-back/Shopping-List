@@ -28,36 +28,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addItem = useCallback(async (name: string, category: 'products' | 'household', quantity: number) => {
-    // Сначала ищем продукт
+    const cleanName = name.trim().toLowerCase()
+    
+    // Ищем продукт с таким же именем (игнорируем регистр)
     const { data: existingProduct } = await supabase
       .from('products')
       .select('*')
-      .ilike('name', name)
+      .ilike('name', cleanName)
+      .eq('category', category)
       .maybeSingle()
 
     let productId: string
 
     if (existingProduct) {
-      // Продукт уже есть — берём его id
       productId = existingProduct.id
     } else {
-      // Создаём новый продукт
-      const { data: newProduct } = await supabase
-        .from('products')
-        .insert({
-          name,
-          category,
-          unit: 'шт.',
-          icon: category === 'products' ? '🛒' : '🧹',
-        })
-        .select()
-        .maybeSingle()
+      // Пробуем создать — если ошибка duplicate, просто игнорируем и ищем снова
+      try {
+        const { data: newProduct, error } = await supabase
+          .from('products')
+          .insert({
+            name: cleanName,
+            category,
+            unit: 'шт.',
+            icon: category === 'products' ? '🛒' : '🧹',
+          })
+          .select()
+          .maybeSingle()
 
-      if (!newProduct) return
-      productId = newProduct.id
+        if (error && error.code === '23505') {
+          // Duplicate — ищем ещё раз (гонка состояний)
+          const { data: retryProduct } = await supabase
+            .from('products')
+            .select('*')
+            .ilike('name', cleanName)
+            .eq('category', category)
+            .maybeSingle()
+          
+          if (!retryProduct) return
+          productId = retryProduct.id
+        } else if (newProduct) {
+          productId = newProduct.id
+        } else {
+          return
+        }
+      } catch {
+        return
+      }
     }
 
-    // Добавляем в список покупок
+    // Добавляем в список
     const { data: addedItem } = await supabase
       .from('shopping_list')
       .insert({
