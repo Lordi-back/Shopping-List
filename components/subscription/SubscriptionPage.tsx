@@ -112,7 +112,20 @@ export function SubscriptionPage() {
             ))}
           </div>
 
-          <p className="text-xs text-gray-400">
+         <button
+            onClick={async () => {
+              setIsPaying(true)
+              await mockPayment('demo-user')
+              await loadSubscription()
+              setIsPaying(false)
+            }}
+            disabled={isPaying}
+            className="btn btn-primary w-full mt-4"
+          >
+            {isPaying ? 'Продление...' : '🔄 Продлить на месяц (149 ₽)'}
+          </button>
+
+          <p className="text-xs text-gray-400 mt-3">
             Поделитесь кодом с членами семьи. Каждый может ввести его на своём устройстве.
           </p>
         </div>
