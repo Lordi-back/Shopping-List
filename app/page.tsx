@@ -22,13 +22,13 @@ export default function HomePage() {
   const [showScanner, setShowScanner] = useState(false)
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null)
   const { showToast } = useToast()
-  const { items, loadItems } = useStore()
+  const { items, loadItems, addItem, toggleItem, deleteItem } = useStore()
 
   useEffect(() => {
     loadItems().then(() => setLoading(false))
   }, [])
 
-  // Realtime — тосты + обновление списка
+  // Realtime — только для тостов
   useEffect(() => {
     const channel = supabase
       .channel('shopping-toasts')
@@ -79,59 +79,20 @@ export default function HomePage() {
     category: 'products' | 'household'
     icon: string
   }) => {
-    const { data: newProduct } = await supabase
-      .from('products')
-      .insert({
-        name: item.name,
-        category: item.category,
-        icon: item.icon,
-        barcode: scannedBarcode,
-      })
-      .select()
-      .maybeSingle()
-
-    if (newProduct) {
-      const { error } = await supabase
-        .from('shopping_list')
-        .insert({
-          product_id: newProduct.id,
-          quantity: 1,
-          priority: 1,
-          purchased: false,
-          category: item.category,
-        })
-
-      if (error) {
-        showToast('error', `Ошибка: ${error.message}`)
-      }
-    }
-
+    await addItem(item.name, item.category, 1)
     setScannedBarcode(null)
   }
 
   const handleToggle = async (id: string, purchased: boolean) => {
     const item = items.find((i) => i.id === id)
-
-    const { error } = await supabase
-      .from('shopping_list')
-      .update({
-        purchased,
-        purchased_at: purchased ? new Date().toISOString() : null,
-      })
-      .eq('id', id)
-
-    if (error) {
-      showToast('error', 'Не удалось обновить')
-    } else if (purchased && item?.products?.name) {
+    await toggleItem(id, purchased)
+    if (purchased && item?.products?.name) {
       recordPurchase('demo-user', item.products.name, item.category)
     }
   }
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('shopping_list').delete().eq('id', id)
-    if (error) {
-      showToast('error', 'Не удалось удалить')
-    }
+    await deleteItem(id)
   }
 
   const handleAdd = async (newItem: {
@@ -141,53 +102,8 @@ export default function HomePage() {
     priority: number
     notes: string
   }) => {
-    const { data: existingProduct } = await supabase
-      .from('products')
-      .select('*')
-      .ilike('name', newItem.name)
-      .maybeSingle()
-
-    let productId: string
-
-    if (existingProduct) {
-      productId = existingProduct.id
-    } else {
-      const { data: newProduct, error: productError } = await supabase
-        .from('products')
-        .insert({
-          name: newItem.name,
-          category: activeTab,
-          unit: newItem.unit,
-          icon: getIconForCategory(activeTab),
-        })
-        .select()
-        .maybeSingle()
-
-      if (productError || !newProduct) {
-        showToast('error', `Ошибка: ${productError?.message || 'неизвестно'}`)
-        return
-      }
-      productId = newProduct.id
-    }
-
-    const { error } = await supabase
-      .from('shopping_list')
-      .insert({
-        product_id: productId,
-        quantity: newItem.quantity,
-        priority: newItem.priority || 1,
-        purchased: false,
-        category: activeTab,
-        notes: newItem.notes || null,
-      })
-
-    if (error) {
-      showToast('error', `Ошибка: ${error.message}`)
-      return
-    }
-
+    await addItem(newItem.name, activeTab as 'products' | 'household', newItem.quantity)
     showToast('success', `${getIconForCategory(activeTab)} ${newItem.name} добавлен`)
-    loadItems()
   }
 
   const counts = {
