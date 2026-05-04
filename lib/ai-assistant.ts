@@ -115,8 +115,8 @@ async function handleRecipeRequest(userMessage: string): Promise<AIResponse> {
   // 4. Подбираем рецепты, которые максимально используют ингредиенты из холодильника
   const scoredRecipes = (dbRecipes || []).map(recipe => {
     const recipeIngs = (recipe.ingredients || []).map((i: string) => i.toLowerCase())
-    const matches = recipeIngs.filter(ing => fridgeIngredients.some(fi => fi.includes(ing) || ing.includes(fi)))
-    const missing = recipeIngs.filter(ing => !fridgeIngredients.some(fi => fi.includes(ing) || ing.includes(fi)))
+        const matches = recipeIngs.filter((ing: string) => fridgeIngredients.some((fi: string) => fi.includes(ing) || ing.includes(fi)))
+    const missing = recipeIngs.filter((ing: string) => !fridgeIngredients.some((fi: string) => fi.includes(ing) || ing.includes(fi)))
     return { recipe, matches: matches.length, missing }
   })
 
