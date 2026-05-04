@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useStore } from '@/lib/store'
+import { useToast } from '@/components/ui/ToastProvider'
 
 type Message = {
   role: 'user' | 'assistant'
@@ -14,6 +16,8 @@ export default function RecipesPage() {
   const [loading, setLoading] = useState(true)
   const [fridgeEmpty, setFridgeEmpty] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const { addItem } = useStore()
+  const { showToast } = useToast()
 
   useEffect(() => {
     initChat()
@@ -36,13 +40,13 @@ export default function RecipesPage() {
       setFridgeEmpty(true)
       setMessages([{
         role: 'assistant',
-        content: `🍳 **Шеф-помощник**\n\nХолодильник пока пуст. Добавь продукты на главной странице, и я подберу рецепты!\n\nА пока — спроси меня что-нибудь:\n• «Что приготовить из яиц?»\n• «Быстрые рецепты»\n• «Рецепт куриного супа»`,
+        content: `👨‍🍳 **Шеф-помощник**\n\nХолодильник пока пуст.\n\nЯ умею:\n🛒 «Добавь молоко» — добавить в список\n🍳 «Что приготовить?» — подобрать рецепт\n📋 «Покажи список» — что купить\n✅ «Молоко купил» — отметить`,
       }])
     } else {
       setFridgeEmpty(false)
       setMessages([{
         role: 'assistant',
-        content: `🍳 **Шеф-помощник**\n\nВ холодильнике: ${ingredients.join(', ')}\n\nЯ подберу рецепты на основе этих продуктов! Спроси:\n• «Что приготовить?»\n• «Рецепт с яйцами»\n• «Быстрые рецепты»`,
+        content: `👨‍🍳 **Шеф-помощник**\n\n🥗 В холодильнике: ${ingredients.join(', ')}\n\nСпроси:\n• «Что приготовить?»\n• «Добавь хлеб»\n• «Покажи список»`,
       }])
     }
 
@@ -74,6 +78,17 @@ export default function RecipesPage() {
       if (data.error) {
         setMessages(prev => [...prev, { role: 'assistant', content: 'Ошибка: ' + data.error }])
       } else {
+        // Выполняем действия (добавление товаров)
+        if (data.actions) {
+          for (const action of data.actions) {
+            if (action.type === 'add_items') {
+              for (const item of action.items) {
+                await addItem(item.name, item.category || 'products', item.quantity || 1)
+                showToast('success', `✅ ${item.name} добавлен в список`)
+              }
+            }
+          }
+        }
         setMessages(prev => [...prev, { role: 'assistant', content: data.message }])
       }
     } catch {
@@ -88,29 +103,24 @@ export default function RecipesPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-4 pb-24 flex flex-col h-[calc(100vh-8rem)]">
-      <h1 className="text-2xl font-bold text-gray-800 mb-4">🍳 Шеф-помощник</h1>
+    <div className="max-w-2xl mx-auto px-4 py-4 flex flex-col h-[calc(100vh-5rem)]">
+      <h1 className="text-2xl font-bold text-gray-800 mb-3">👨‍🍳 Шеф-помощник</h1>
 
       {/* Быстрые кнопки */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-3">
         <button onClick={() => handleQuickAsk('Что приготовить?')} className="btn btn-outline text-xs py-1.5 px-3">
           🍽 Что приготовить?
         </button>
-        <button onClick={() => handleQuickAsk('Быстрые рецепты')} className="btn btn-outline text-xs py-1.5 px-3">
-          ⚡ Быстрые
+        <button onClick={() => handleQuickAsk('Добавь молоко')} className="btn btn-outline text-xs py-1.5 px-3">
+          🛒 Добавить
         </button>
-        <button onClick={() => handleQuickAsk('Рецепт с яйцами')} className="btn btn-outline text-xs py-1.5 px-3">
-          🥚 С яйцами
+        <button onClick={() => handleQuickAsk('Покажи список')} className="btn btn-outline text-xs py-1.5 px-3">
+          📋 Список
         </button>
-        {!fridgeEmpty && (
-          <button onClick={() => handleQuickAsk('Рецепт из того что есть')} className="btn btn-outline text-xs py-1.5 px-3">
-            🥗 Из холодильника
-          </button>
-        )}
       </div>
 
       {/* Сообщения */}
-      <div className="flex-1 overflow-y-auto space-y-3 mb-4 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto space-y-3 mb-3 scrollbar-thin">
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
@@ -139,13 +149,13 @@ export default function RecipesPage() {
       </div>
 
       {/* Ввод */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 pb-20">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-          placeholder="Спроси про рецепт..."
+          placeholder="Добавь молоко или спроси рецепт..."
           className="input flex-1 text-sm"
           disabled={loading}
         />
