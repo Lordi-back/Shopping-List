@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { ToastProvider } from '@/components/ui/ToastProvider'
-import { BottomNav } from '@/components/ui/BottomNav'
-import { ChatWidget } from '@/components/chat/ChatWidget'
+import { AppShell } from '@/components/ui/AppShell'
 
 export const metadata: Metadata = {
   title: 'Семейный холодильник',
@@ -33,8 +32,7 @@ export default function RootLayout({
           <main className="min-h-screen pb-20">
             {children}
           </main>
-          <BottomNav />
-          <ChatWidget items={[]} onExecuteAction={(action) => console.log('AI action:', action)} />
+          <AppShell />
         </ToastProvider>
       </body>
     </html>
