@@ -1,256 +1,173 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-type Recipe = {
-  id: string
-  title: string
-  description?: string
-  ingredients: string[]
-  instructions?: string[]
-  prep_time?: number
-  cook_time?: number
-  difficulty?: string
-  category?: string
-  source_url?: string
+type Message = {
+  role: 'user' | 'assistant'
+  content: string
 }
 
-const FALLBACK_RECIPES: Recipe[] = [
-  {
-    id: 'fallback-1',
-    title: 'Омлет с овощами',
-    description: 'Быстрый и полезный завтрак',
-    ingredients: ['яйца', 'молоко', 'помидор', 'лук', 'соль'],
-    prep_time: 10,
-    cook_time: 15,
-    difficulty: 'легко',
-    source_url: 'https://www.russianfood.com/recipes/recipe.php?rid=154322',
-  },
-  {
-    id: 'fallback-2',
-    title: 'Куриный суп',
-    description: 'Ароматный домашний суп',
-    ingredients: ['курица', 'картофель', 'морковь', 'лук', 'лапша'],
-    prep_time: 20,
-    cook_time: 40,
-    difficulty: 'средне',
-    source_url: 'https://www.russianfood.com/recipes/recipe.php?rid=139755',
-  },
-  {
-    id: 'fallback-3',
-    title: 'Паста с томатным соусом',
-    description: 'Итальянская классика',
-    ingredients: ['паста', 'помидор', 'чеснок', 'базилик', 'сыр'],
-    prep_time: 15,
-    cook_time: 20,
-    difficulty: 'легко',
-    source_url: 'https://www.russianfood.com/recipes/recipe.php?rid=152467',
-  },
-  {
-    id: 'fallback-4',
-    title: 'Салат из свежих овощей',
-    description: 'Лёгкий витаминный салат',
-    ingredients: ['огурец', 'помидор', 'лук', 'масло', 'соль'],
-    prep_time: 15,
-    cook_time: 0,
-    difficulty: 'легко',
-    source_url: 'https://www.russianfood.com/recipes/recipe.php?rid=148921',
-  },
-]
-
 export default function RecipesPage() {
-  const [recipes, setRecipes] = useState<Recipe[]>([])
-  const [search, setSearch] = useState('')
+  const [messages, setMessages] = useState<Message[]>([])
+  const [input, setInput] = useState('')
   const [loading, setLoading] = useState(true)
-  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
+  const [fridgeEmpty, setFridgeEmpty] = useState(true)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    loadRecipes()
+    initChat()
   }, [])
 
-  const loadRecipes = async () => {
-    setLoading(true)
-    const { data } = await supabase
-      .from('recipes')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(20)
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
-    if (data && data.length > 0) {
-      setRecipes(data as Recipe[])
+  const initChat = async () => {
+    setLoading(true)
+
+    // Проверяем холодильник
+    const { data: fridgeItems } = await supabase
+      .from('fridge_items')
+      .select('quantity, products(name)')
+
+    const ingredients = fridgeItems?.map(f => f.products?.name).filter(Boolean) || []
+
+    if (ingredients.length === 0) {
+      setFridgeEmpty(true)
+      setMessages([{
+        role: 'assistant',
+        content: `🍳 **Шеф-помощник**
+
+Холодильник пока пуст. Добавь продукты на главной странице, и я подберу рецепты!
+
+А пока — спроси меня что-нибудь:
+• «Что приготовить из яиц?»
+• «Быстрые рецепты»
+• «Рецепт куриного супа»`,
+      }])
     } else {
-      setRecipes(FALLBACK_RECIPES)
+      setFridgeEmpty(false)
+      setMessages([{
+        role: 'assistant',
+        content: `🍳 **Шеф-помощник**
+
+В холодильнике: ${ingredients.join(', ')}
+
+Я подберу рецепты на основе этих продуктов! Спроси:
+• «Что приготовить?»
+• «Рецепт с яйцами»
+• «Быстрые рецепты»`,
+      }])
     }
+
     setLoading(false)
   }
 
-  const handleSearch = async () => {
-    if (!search.trim()) {
-      loadRecipes()
-      return
-    }
+  const handleSend = async () => {
+    const text = input.trim()
+    if (!text || loading) return
 
+    const userMsg: Message = { role: 'user', content: text }
+    setMessages(prev => [...prev, userMsg])
+    setInput('')
     setLoading(true)
-    const keywords = search.trim().split(/\s+/)
-    const conditions = keywords.map(k => `title.ilike.%${k}%`).join(',')
 
-    const { data } = await supabase
-      .from('recipes')
-      .select('*')
-      .or(conditions)
-      .limit(20)
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          currentList: [],
+          history: messages.map(m => ({ role: m.role, content: m.content })),
+        }),
+      })
 
-    if (data && data.length > 0) {
-      setRecipes(data as Recipe[])
-    } else {
-      // Поиск по fallback
-      const filtered = FALLBACK_RECIPES.filter(r =>
-        keywords.some(k => r.title.toLowerCase().includes(k.toLowerCase()))
-      )
-      setRecipes(filtered)
+      const data = await res.json()
+
+      if (data.error) {
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Ошибка: ' + data.error }])
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: data.message }])
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Не удалось связаться.' }])
     }
+
     setLoading(false)
   }
 
-  const difficultyIcon = (d?: string) => {
-    if (d === 'легко') return '🟢'
-    if (d === 'средне') return '🟡'
-    return '🔴'
+  const handleQuickAsk = (question: string) => {
+    setInput(question)
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-4 pb-24">
-      <h1 className="text-2xl font-bold text-gray-800 mb-4">🍳 Рецепты</h1>
+    <div className="max-w-2xl mx-auto px-4 py-4 pb-24 flex flex-col h-[calc(100vh-8rem)]">
+      <h1 className="text-2xl font-bold text-gray-800 mb-4">🍳 Шеф-помощник</h1>
 
-      {/* Поиск */}
-      <div className="flex gap-2 mb-4">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          placeholder="Поиск рецепта..."
-          className="input flex-1"
-        />
-        <button onClick={handleSearch} className="btn btn-primary px-4">
-          🔍
+      {/* Быстрые кнопки */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        <button onClick={() => handleQuickAsk('Что приготовить?')} className="btn btn-outline text-xs py-1.5 px-3">
+          🍽 Что приготовить?
         </button>
+        <button onClick={() => handleQuickAsk('Быстрые рецепты')} className="btn btn-outline text-xs py-1.5 px-3">
+          ⚡ Быстрые
+        </button>
+        <button onClick={() => handleQuickAsk('Рецепт с яйцами')} className="btn btn-outline text-xs py-1.5 px-3">
+          🥚 С яйцами
+        </button>
+        {!fridgeEmpty && (
+          <button onClick={() => handleQuickAsk('Рецепт из того что есть')} className="btn btn-outline text-xs py-1.5 px-3">
+            🥗 Из холодильника
+          </button>
+        )}
       </div>
 
-      {/* Список */}
-      {loading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="card animate-pulse">
-              <div className="h-5 bg-gray-200 rounded w-48 mb-2" />
-              <div className="h-4 bg-gray-200 rounded w-32" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {recipes.map(recipe => (
+      {/* Сообщения */}
+      <div className="flex-1 overflow-y-auto space-y-3 mb-4 scrollbar-thin">
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              key={recipe.id}
-              className="card cursor-pointer hover:shadow-card-hover transition-all"
-              onClick={() => setSelectedRecipe(recipe)}
+              className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap ${
+                msg.role === 'user'
+                  ? 'bg-fridge-500 text-white rounded-br-md'
+                  : 'bg-gray-100 text-gray-800 rounded-bl-md'
+              }`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-sm mb-1">{recipe.title}</h3>
-                  {recipe.description && (
-                    <p className="text-xs text-gray-500 mb-2">{recipe.description}</p>
-                  )}
-                  <div className="flex items-center gap-3 text-xs text-gray-400">
-                    <span>{difficultyIcon(recipe.difficulty)} {recipe.difficulty || 'средне'}</span>
-                    <span>🕐 {(recipe.prep_time || 0) + (recipe.cook_time || 0)} мин</span>
-                    <span>🥗 {recipe.ingredients?.length || 0} инг.</span>
-                  </div>
-                </div>
-                <span className="text-2xl flex-shrink-0">📖</span>
+              {msg.content}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-gray-100 px-4 py-3 rounded-2xl rounded-bl-md">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
-          ))}
-        </div>
-      )}
-
-      {recipes.length === 0 && !loading && (
-        <div className="text-center py-12">
-          <p className="text-4xl mb-3">🔍</p>
-          <p className="text-gray-500">Ничего не найдено</p>
-        </div>
-      )}
-
-      {/* Модальное окно рецепта */}
-      {selectedRecipe && (
-        <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center"
-          onClick={() => setSelectedRecipe(null)}
-        >
-          <div
-            className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg max-h-[80vh] overflow-y-auto p-6 animate-slide-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between mb-4">
-              <h3 className="text-lg font-bold">{selectedRecipe.title}</h3>
-              <button
-                onClick={() => setSelectedRecipe(null)}
-                className="btn btn-ghost p-2"
-              >
-                ✕
-              </button>
-            </div>
-
-            {selectedRecipe.description && (
-              <p className="text-sm text-gray-500 mb-4">{selectedRecipe.description}</p>
-            )}
-
-            <div className="flex gap-4 text-sm text-gray-600 mb-4">
-              <span>{difficultyIcon(selectedRecipe.difficulty)} {selectedRecipe.difficulty || 'средне'}</span>
-              <span>🕐 Подготовка: {selectedRecipe.prep_time || '?'} мин</span>
-              <span>🍳 Готовка: {selectedRecipe.cook_time || '?'} мин</span>
-            </div>
-
-            {/* Ингредиенты */}
-            <h4 className="font-semibold text-sm mb-2">📝 Ингредиенты:</h4>
-            <ul className="space-y-1 mb-4">
-              {selectedRecipe.ingredients?.map((ing, i) => (
-                <li key={i} className="text-sm text-gray-600 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-fridge-500 rounded-full flex-shrink-0" />
-                  {ing}
-                </li>
-              ))}
-            </ul>
-
-            {/* Инструкции */}
-            {selectedRecipe.instructions && selectedRecipe.instructions.length > 0 && (
-              <>
-                <h4 className="font-semibold text-sm mb-2">👨‍🍳 Приготовление:</h4>
-                <ol className="space-y-2 mb-4">
-                  {selectedRecipe.instructions.map((step, i) => (
-                    <li key={i} className="text-sm text-gray-600 flex gap-2">
-                      <span className="font-bold text-fridge-500 flex-shrink-0">{i + 1}.</span>
-                      {step}
-                    </li>
-                  ))}
-                </ol>
-              </>
-            )}
-
-            {selectedRecipe.source_url && (
-              <a
-                href={selectedRecipe.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-outline w-full text-sm"
-              >
-                🔗 Полный рецепт на сайте
-              </a>
-            )}
           </div>
-        </div>
-      )}
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Ввод */}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+          placeholder="Спроси про рецепт..."
+          className="input flex-1 text-sm"
+          disabled={loading}
+        />
+        <button onClick={handleSend} disabled={loading || !input.trim()} className="btn btn-primary px-5">
+          ➤
+        </button>
+      </div>
     </div>
   )
 }
