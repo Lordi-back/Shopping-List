@@ -5,8 +5,8 @@ import { ShoppingItem, supabase } from './supabase'
 
 type StoreContextType = {
   items: ShoppingItem[]
-  loadItems: () => Promise<void>
-  addItem: (name: string, category: 'products' | 'household', quantity: number) => Promise<void>
+  loadItems: (familyId: string) => Promise<void>
+  addItem: (name: string, category: 'products' | 'household', quantity: number, familyId: string) => Promise<void>
   toggleItem: (id: string, purchased: boolean) => Promise<void>
   deleteItem: (id: string) => Promise<void>
 }
@@ -22,19 +22,20 @@ const StoreContext = createContext<StoreContextType>({
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ShoppingItem[]>([])
 
-  const loadItems = useCallback(async () => {
+  const loadItems = useCallback(async (familyId: string) => {
+    if (!familyId) return
     const { data } = await supabase
       .from('shopping_list')
       .select('*, products(*)')
+      .eq('family_id', familyId)
       .order('priority', { ascending: false })
       .order('created_at', { ascending: false })
     if (data) setItems(data as ShoppingItem[])
   }, [])
 
-  const addItem = useCallback(async (name: string, category: 'products' | 'household', quantity: number) => {
+  const addItem = useCallback(async (name: string, category: 'products' | 'household', quantity: number, familyId: string) => {
     const cleanName = name.trim().toLowerCase()
 
-    // Ищем продукт
     const { data: existingProduct } = await supabase
       .from('products')
       .select('*')
@@ -49,12 +50,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } else {
       const { data: newProduct, error } = await supabase
         .from('products')
-        .insert({
-          name: cleanName,
-          category,
-          unit: 'шт.',
-          icon: category === 'products' ? '🛒' : '🧹',
-        })
+        .insert({ name: cleanName, category, unit: 'шт.', icon: category === 'products' ? '🛒' : '🧹' })
         .select()
         .maybeSingle()
 
@@ -82,6 +78,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         priority: 1,
         purchased: false,
         category,
+        family_id: familyId,
       })
       .select('*, products(*)')
       .maybeSingle()
@@ -92,28 +89,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const toggleItem = useCallback(async (id: string, purchased: boolean) => {
-    // Оптимистично обновляем UI
     setItems((prev) =>
       prev.map((i) =>
-        i.id === id
-          ? { ...i, purchased, purchased_at: purchased ? new Date().toISOString() : undefined }
-          : i
+        i.id === id ? { ...i, purchased, purchased_at: purchased ? new Date().toISOString() : undefined } : i
       )
     )
-
-    await supabase
-      .from('shopping_list')
-      .update({
-        purchased,
-        purchased_at: purchased ? new Date().toISOString() : null,
-      })
-      .eq('id', id)
+    await supabase.from('shopping_list').update({ purchased, purchased_at: purchased ? new Date().toISOString() : null }).eq('id', id)
   }, [])
 
   const deleteItem = useCallback(async (id: string) => {
-    // Оптимистично удаляем из UI
     setItems((prev) => prev.filter((i) => i.id !== id))
-
     await supabase.from('shopping_list').delete().eq('id', id)
   }, [])
 
