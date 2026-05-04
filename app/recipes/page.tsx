@@ -26,38 +26,23 @@ export default function RecipesPage() {
   const initChat = async () => {
     setLoading(true)
 
-    // Проверяем холодильник
     const { data: fridgeItems } = await supabase
       .from('fridge_items')
       .select('quantity, products(name)')
 
-        const ingredients = fridgeItems?.map((f: any) => f.products?.name).filter(Boolean) || []
+    const ingredients = fridgeItems?.map((f: any) => f.products?.name).filter(Boolean) || []
 
     if (ingredients.length === 0) {
       setFridgeEmpty(true)
       setMessages([{
         role: 'assistant',
-        content: `🍳 **Шеф-помощник**
-
-Холодильник пока пуст. Добавь продукты на главной странице, и я подберу рецепты!
-
-А пока — спроси меня что-нибудь:
-• «Что приготовить из яиц?»
-• «Быстрые рецепты»
-• «Рецепт куриного супа»`,
+        content: `🍳 **Шеф-помощник**\n\nХолодильник пока пуст. Добавь продукты на главной странице, и я подберу рецепты!\n\nА пока — спроси меня что-нибудь:\n• «Что приготовить из яиц?»\n• «Быстрые рецепты»\n• «Рецепт куриного супа»`,
       }])
     } else {
       setFridgeEmpty(false)
       setMessages([{
         role: 'assistant',
-        content: `🍳 **Шеф-помощник**
-
-В холодильнике: ${ingredients.join(', ')}
-
-Я подберу рецепты на основе этих продуктов! Спроси:
-• «Что приготовить?»
-• «Рецепт с яйцами»
-• «Быстрые рецепты»`,
+        content: `🍳 **Шеф-помощник**\n\nВ холодильнике: ${ingredients.join(', ')}\n\nЯ подберу рецепты на основе этих продуктов! Спроси:\n• «Что приготовить?»\n• «Рецепт с яйцами»\n• «Быстрые рецепты»`,
       }])
     }
 
