@@ -5,11 +5,11 @@ import { usePathname } from 'next/navigation'
 
 const NAV_ITEMS = [
   { href: '/', label: 'Список', icon: '🏠' },
-  { href: '/recipes', label: 'Рецепты', icon: '🍳' },
+  { href: '/recipes', label: 'Шеф', icon: '👨‍🍳' },
   { href: '/subscription', label: 'Premium', icon: '🏆' },
 ]
 
-export function BottomNav() {
+export function BottomNav({ children }: { children?: React.ReactNode }) {
   const pathname = usePathname()
 
   return (
