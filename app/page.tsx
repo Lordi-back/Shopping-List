@@ -28,7 +28,7 @@ export default function HomePage() {
     loadItems().then(() => setLoading(false))
   }, [])
 
-  // Realtime — только для тостов, стейт обновляется через loadItems
+  // Realtime — тосты + обновление списка
   useEffect(() => {
     const channel = supabase
       .channel('shopping-toasts')
@@ -91,24 +91,19 @@ export default function HomePage() {
       .maybeSingle()
 
     if (newProduct) {
-        const { error } = await supabase
-      .from('shopping_list')
-      .insert({
-        product_id: productId,
-        quantity: newItem.quantity,
-        priority: newItem.priority || 1,
-        purchased: false,
-        category: activeTab,
-        notes: newItem.notes || null,
-      })
+      const { error } = await supabase
+        .from('shopping_list')
+        .insert({
+          product_id: newProduct.id,
+          quantity: 1,
+          priority: 1,
+          purchased: false,
+          category: item.category,
+        })
 
-    if (error) {
-      showToast('error', `Ошибка: ${error.message}`)
-      return
-    }
-
-    showToast('success', `${getIconForCategory(activeTab)} ${newItem.name} добавлен`)
-    loadItems()
+      if (error) {
+        showToast('error', `Ошибка: ${error.message}`)
+      }
     }
 
     setScannedBarcode(null)
@@ -188,7 +183,11 @@ export default function HomePage() {
 
     if (error) {
       showToast('error', `Ошибка: ${error.message}`)
+      return
     }
+
+    showToast('success', `${getIconForCategory(activeTab)} ${newItem.name} добавлен`)
+    loadItems()
   }
 
   const counts = {
@@ -232,21 +231,40 @@ export default function HomePage() {
               <div className="flex items-center gap-3">
                 <div className="w-6 h-6 bg-gray-200 rounded-full" />
                 <div className="w-10 h-10 bg-gray-200 rounded-xl" />
-                <div className="flex-1"><div className="h-4 bg-gray-200 rounded w-24 mb-1" /><div className="h-3 bg-gray-200 rounded w-16" /></div>
+                <div className="flex-1">
+                  <div className="h-4 bg-gray-200 rounded w-24 mb-1" />
+                  <div className="h-3 bg-gray-200 rounded w-16" />
+                </div>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <ShoppingList items={items} category={activeTab as 'products' | 'household'} onToggle={handleToggle} onDelete={handleDelete} onAdd={handleAdd} />
+        <ShoppingList
+          items={items}
+          category={activeTab as 'products' | 'household'}
+          onToggle={handleToggle}
+          onDelete={handleDelete}
+          onAdd={handleAdd}
+        />
       )}
 
       {showScanner && <BarcodeScanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
-      {scannedBarcode && <ScanResultModal barcode={scannedBarcode} onAdd={handleScannedAdd} onClose={() => setScannedBarcode(null)} />}
+      {scannedBarcode && (
+        <ScanResultModal
+          barcode={scannedBarcode}
+          onAdd={handleScannedAdd}
+          onClose={() => setScannedBarcode(null)}
+        />
+      )}
     </div>
   )
 }
 
 function getIconForCategory(category: string): string {
-  return { products: '🛒', household: '🧹' }[category] || '📦'
+  const icons: Record<string, string> = {
+    products: '🛒',
+    household: '🧹',
+  }
+  return icons[category] || '📦'
 }
