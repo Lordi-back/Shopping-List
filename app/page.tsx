@@ -146,11 +146,11 @@ export default function HomePage() {
     priority: number
     notes: string
   }) => {
-    const { data: existingProduct } = await supabase
+   const { data: existingProduct } = await supabase
       .from('products')
       .select('*')
       .ilike('name', newItem.name)
-      .single()
+      .maybeSingle() 
 
     let productId: string
 
@@ -181,7 +181,7 @@ export default function HomePage() {
       .insert({
         product_id: productId,
         quantity: newItem.quantity,
-        priority: newItem.priority,
+        priority: newItem.priority || 1,
         purchased: false,
         category: activeTab,
         notes: newItem.notes || null,
@@ -248,7 +248,7 @@ export default function HomePage() {
             name,
             quantity: 1,
             unit: 'шт.',
-            priority: 0,
+            priority: 1,
             notes: '',
           })
         }}
