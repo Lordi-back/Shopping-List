@@ -1,182 +1,180 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { checkSubscription, joinSubscriptionByCode, mockPayment, formatDate, getDeviceId } from '@/lib/subscription'
-
-type SubscriptionInfo = {
-  active: boolean
-  code?: string
-  validUntil?: string
-  devicesUsed?: number
-  maxDevices?: number
-}
+import { supabase } from '@/lib/supabase'
+import { getOrCreateFamily, checkSubscriptionStatus, joinFamily, leaveFamily, getFamilyDevices } from '@/lib/family'
+import { mockPayment } from '@/lib/subscription'
 
 export function SubscriptionPage() {
-  const [sub, setSub] = useState<SubscriptionInfo>({ active: false })
-  const [loading, setLoading] = useState(true)
+  const [status, setStatus] = useState<string>('loading')
+  const [familyCode, setFamilyCode] = useState<string>('')
+  const [daysLeft, setDaysLeft] = useState<number>(0)
   const [joinCode, setJoinCode] = useState('')
   const [joinMessage, setJoinMessage] = useState('')
   const [isJoining, setIsJoining] = useState(false)
   const [isPaying, setIsPaying] = useState(false)
+  const [isCreator, setIsCreator] = useState(false)
+  const [devices, setDevices] = useState<any[]>([])
+  const [familyId, setFamilyId] = useState<string>('')
+  const userId = 'demo-user'
 
-  useEffect(() => {
-    loadSubscription()
-  }, [])
+  useEffect(() => { init() }, [])
 
-  const loadSubscription = async () => {
-    setLoading(true)
-    const info = await checkSubscription()
-    setSub(info)
-    setLoading(false)
+  const init = async () => {
+    const fid = await getOrCreateFamily(userId)
+    setFamilyId(fid)
+    
+    const sub = await checkSubscriptionStatus(userId)
+    setStatus(sub.status)
+    setDaysLeft(sub.daysLeft || 0)
+
+    const { data: family } = await supabase
+      .from('families')
+      .select('*')
+      .eq('id', fid)
+      .single()
+
+    if (family) {
+      setFamilyCode(family.invite_code)
+      const { data: user } = await supabase
+        .from('users')
+        .select('family_id')
+        .eq('id', userId)
+        .single()
+      setIsCreator(user?.family_id === fid)
+    }
+
+    const devs = await getFamilyDevices(fid)
+    setDevices(devs)
   }
 
   const handleJoin = async () => {
     if (!joinCode.trim()) return
     setIsJoining(true)
     setJoinMessage('')
-
-    const result = await joinSubscriptionByCode(joinCode.trim())
+    const result = await joinFamily(userId, joinCode.trim())
     setJoinMessage(result.message)
-
     if (result.success) {
-      await loadSubscription()
       setJoinCode('')
+      init()
     }
     setIsJoining(false)
   }
 
+  const handleLeave = async () => {
+    if (!confirm('Выйти из семьи? Вы потеряете доступ к общему списку.')) return
+    await leaveFamily(userId)
+    init()
+  }
+
   const handlePay = async () => {
     setIsPaying(true)
-    // Заглушка оплаты
-    const result = await mockPayment('demo-user')
-    if (result.success) {
-      await loadSubscription()
-    }
+    await mockPayment(userId)
+    init()
     setIsPaying(false)
   }
 
-  if (loading) {
+  if (status === 'loading') {
     return (
       <div className="max-w-lg mx-auto px-4 py-8">
         <div className="card animate-pulse p-8 text-center">
           <div className="w-16 h-16 bg-gray-200 rounded-2xl mx-auto mb-4" />
-          <div className="h-6 bg-gray-200 rounded w-48 mx-auto mb-2" />
-          <div className="h-4 bg-gray-200 rounded w-32 mx-auto" />
+          <div className="h-6 bg-gray-200 rounded w-48 mx-auto" />
         </div>
       </div>
     )
   }
 
-  // Активная подписка
-  if (sub.active) {
-    return (
-      <div className="max-w-lg mx-auto px-4 py-8">
-        <div className="card p-6 text-center">
-          <div className="text-5xl mb-4">🏆</div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">Premium активен!</h2>
-          <p className="text-sm text-gray-500 mb-6">До {formatDate(sub.validUntil!)}</p>
-
-          {/* Код */}
-          <div className="bg-gray-50 rounded-2xl p-4 mb-4">
-            <p className="text-xs text-gray-400 mb-2">Код для других устройств</p>
-            <div className="flex items-center justify-center gap-3">
-              <code className="text-2xl font-bold text-fridge-500 tracking-widest">{sub.code}</code>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(sub.code || '')
-                  alert('Код скопирован!')
-                }}
-                className="btn btn-ghost p-2 text-lg"
-              >
-                📋
-              </button>
-            </div>
-          </div>
-
-          {/* Устройства */}
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <span className="text-sm text-gray-500">
-              📱 {sub.devicesUsed} из {sub.maxDevices} устройств
-            </span>
-          </div>
-
-          {/* Индикатор устройств */}
-          <div className="flex justify-center gap-1 mb-6">
-            {Array.from({ length: sub.maxDevices || 5 }).map((_, i) => (
-              <div
-                key={i}
-                className={`w-3 h-3 rounded-full ${
-                  i < (sub.devicesUsed || 0) ? 'bg-fridge-500' : 'bg-gray-200'
-                }`}
-              />
-            ))}
-          </div>
-
-         <button
-            onClick={async () => {
-              setIsPaying(true)
-              await mockPayment('demo-user')
-              await loadSubscription()
-              setIsPaying(false)
-            }}
-            disabled={isPaying}
-            className="btn btn-primary w-full mt-4"
-          >
-            {isPaying ? 'Продление...' : '🔄 Продлить на месяц (149 ₽)'}
-          </button>
-
-          <p className="text-xs text-gray-400 mt-3">
-            Поделитесь кодом с членами семьи. Каждый может ввести его на своём устройстве.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  // Неактивная подписка
   return (
     <div className="max-w-lg mx-auto px-4 py-8 space-y-6">
-      {/* Оформить подписку */}
+      {/* Статус подписки */}
       <div className="card p-6 text-center">
-        <div className="text-5xl mb-4">🍏</div>
-        <h2 className="text-xl font-bold text-gray-800 mb-2">Семейный холодильник Premium</h2>
-        <p className="text-3xl font-bold text-fridge-500 mb-1">149 ₽</p>
-        <p className="text-sm text-gray-400 mb-6">в месяц · до 5 устройств</p>
-
-        <ul className="text-left text-sm text-gray-600 space-y-2 mb-6">
-          <li>✅ Неограниченные списки покупок</li>
-          <li>✅ Синхронизация между устройствами</li>
-          <li>✅ AI-помощник с рецептами</li>
-          <li>✅ Умные напоминания</li>
-          <li>✅ Сканер штрихкодов</li>
-          <li>✅ До 5 устройств по одному коду</li>
-        </ul>
-
-        <button
-          onClick={handlePay}
-          disabled={isPaying}
-          className="btn btn-primary w-full text-base py-4"
-        >
-          {isPaying ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Оплата...
-            </span>
-          ) : (
-            '💳 Оплатить 149 ₽'
-          )}
-        </button>
-
-        <p className="text-xs text-gray-400 mt-3">
-          Тестовый режим — оплата не спишется
-        </p>
+        {status === 'admin' && (
+          <>
+            <div className="text-5xl mb-4">👑</div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Админ-доступ</h2>
+            <p className="text-sm text-gray-500">Пожизненная подписка</p>
+          </>
+        )}
+        {status === 'active' && (
+          <>
+            <div className="text-5xl mb-4">🏆</div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Premium активен!</h2>
+          </>
+        )}
+        {status === 'trial' && (
+          <>
+            <div className="text-5xl mb-4">🎁</div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Пробный период</h2>
+            <p className="text-sm text-gray-500 mb-4">{daysLeft} дней осталось</p>
+            <button onClick={handlePay} disabled={isPaying} className="btn btn-primary w-full">
+              {isPaying ? 'Оплата...' : '💳 149 ₽/мес'}
+            </button>
+          </>
+        )}
+        {status === 'expired' && (
+          <>
+            <div className="text-5xl mb-4">⚠️</div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Подписка истекла</h2>
+            <button onClick={handlePay} disabled={isPaying} className="btn btn-primary w-full">
+              {isPaying ? 'Оплата...' : '💳 149 ₽/мес'}
+            </button>
+          </>
+        )}
       </div>
 
-      {/* Ввести код */}
+      {/* Код семьи */}
+      {isCreator && familyCode && status !== 'expired' && (
+        <div className="card p-6 text-center">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">🔑 Код семьи</h3>
+          <div className="bg-gray-50 rounded-2xl p-4 mb-3">
+            <code className="text-2xl font-bold text-fridge-500 tracking-widest">{familyCode}</code>
+          </div>
+          <button
+            onClick={() => { navigator.clipboard.writeText(familyCode); alert('Код скопирован!') }}
+            className="btn btn-outline w-full text-sm"
+          >
+            📋 Скопировать
+          </button>
+          <p className="text-xs text-gray-400 mt-2">До 5 устройств на один код</p>
+        </div>
+      )}
+
+      {/* Устройства */}
+      {devices.length > 0 && (
+        <div className="card p-6">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">
+            📱 Устройства ({devices.length}/5)
+          </h3>
+          <div className="space-y-2">
+            {devices.map((device, i) => (
+              <div key={device.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{i === 0 ? '👑' : '📱'}</span>
+                  <span className="text-sm text-gray-700">
+                    {device.users?.first_name || device.users?.username || 'Устройство'}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400">
+                  {new Date(device.added_at).toLocaleDateString('ru-RU')}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Кнопка Выйти из семьи */}
+      <div className="card p-6 text-center">
+        <button onClick={handleLeave} className="btn btn-ghost text-red-500 text-sm w-full">
+          🚪 Выйти из семьи
+        </button>
+        <p className="text-xs text-gray-400 mt-2">Вы потеряете доступ к общему списку</p>
+      </div>
+
+      {/* Присоединиться */}
       <div className="card p-6">
-        <h3 className="text-sm font-semibold text-gray-800 mb-4 text-center">
-          Уже есть код? Введите его:
-        </h3>
+        <h3 className="text-sm font-semibold text-gray-800 mb-3 text-center">Присоединиться к семье</h3>
         <div className="flex gap-2">
           <input
             type="text"
@@ -187,16 +185,12 @@ export function SubscriptionPage() {
             className="input flex-1 text-center text-lg tracking-widest font-mono uppercase"
             onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
           />
-          <button
-            onClick={handleJoin}
-            disabled={isJoining || joinCode.length < 8}
-            className="btn btn-primary px-6"
-          >
+          <button onClick={handleJoin} disabled={isJoining || joinCode.length < 8} className="btn btn-primary px-6">
             {isJoining ? '...' : '→'}
           </button>
         </div>
         {joinMessage && (
-          <p className={`text-xs text-center mt-3 ${joinMessage.includes('✅') || joinMessage.includes('привязано') ? 'text-green-600' : 'text-red-500'}`}>
+          <p className={`text-xs text-center mt-3 ${joinMessage.includes('✅') ? 'text-green-600' : 'text-red-500'}`}>
             {joinMessage}
           </p>
         )}
