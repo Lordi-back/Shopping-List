@@ -31,7 +31,7 @@ export default function RecipesPage() {
       .from('fridge_items')
       .select('quantity, products(name)')
 
-    const ingredients = fridgeItems?.map(f => f.products?.name).filter(Boolean) || []
+        const ingredients = fridgeItems?.map((f: any) => f.products?.name).filter(Boolean) || []
 
     if (ingredients.length === 0) {
       setFridgeEmpty(true)
