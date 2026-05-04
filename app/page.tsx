@@ -24,45 +24,42 @@ export default function HomePage() {
   const { showToast } = useToast()
   const { items, loadItems } = useStore()
 
-  // Загрузка списка при первом входе
   useEffect(() => {
     loadItems().then(() => setLoading(false))
-  }, [loadItems])
+  }, [])
 
-  // Realtime подписка
+  // Realtime — только для тостов, стейт обновляется через loadItems
   useEffect(() => {
     const channel = supabase
-      .channel('shopping-list-changes')
+      .channel('shopping-toasts')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'shopping_list' },
+        { event: 'INSERT', schema: 'public', table: 'shopping_list' },
         (payload) => {
-          const eventType = payload.eventType
-          const newItem = payload.new as ShoppingItem
+          const item = payload.new as ShoppingItem
+          showToast('success', `🛒 ${item.products?.name || 'Товар'} добавлен в список`)
+          loadItems()
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'shopping_list' },
+        (payload) => {
+          const item = payload.new as ShoppingItem
           const oldItem = payload.old as ShoppingItem
-
-          switch (eventType) {
-            case 'INSERT':
-              if (!items.find((i) => i.id === newItem.id)) {
-                loadItems()
-              }
-              showToast('success', `🛒 ${newItem.products?.name || 'Товар'} добавлен в список`)
-              break
-
-            case 'UPDATE':
-              loadItems()
-              if (newItem.purchased && !oldItem?.purchased) {
-                showToast('success', `✅ ${newItem.products?.name || 'Товар'} куплен!`)
-              }
-              break
-
-            case 'DELETE':
-              loadItems()
-              if (oldItem?.products?.name) {
-                showToast('info', `🗑️ ${oldItem.products.name} удалён из списка`)
-              }
-              break
+          if (item.purchased && !oldItem?.purchased) {
+            showToast('success', `✅ ${item.products?.name || 'Товар'} куплен!`)
           }
+          loadItems()
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'shopping_list' },
+        (payload) => {
+          const item = payload.old as ShoppingItem
+          showToast('info', `🗑️ ${item?.products?.name || 'Товар'} удалён из списка`)
+          loadItems()
         }
       )
       .subscribe()
@@ -70,15 +67,13 @@ export default function HomePage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [showToast, items.length])
+  }, [showToast, loadItems])
 
-  // Обработчик сканирования
   const handleScan = (barcode: string) => {
     setShowScanner(false)
     setScannedBarcode(barcode)
   }
 
-  // Добавление отсканированного товара
   const handleScannedAdd = async (item: {
     name: string
     category: 'products' | 'household'
@@ -93,7 +88,7 @@ export default function HomePage() {
         barcode: scannedBarcode,
       })
       .select()
-      .single()
+      .maybeSingle()
 
     if (newProduct) {
       const { error } = await supabase
@@ -108,19 +103,14 @@ export default function HomePage() {
 
       if (error) {
         showToast('error', `Ошибка: ${error.message}`)
-      } else {
-        showToast('success', `${item.icon} ${item.name} добавлен в ${item.category === 'products' ? 'Продукты' : 'Быт'}`)
-        loadItems()
       }
     }
 
     setScannedBarcode(null)
   }
 
-  // Переключение "куплено"
   const handleToggle = async (id: string, purchased: boolean) => {
     const item = items.find((i) => i.id === id)
-    const purchasedAt = purchased ? new Date().toISOString() : undefined
 
     const { error } = await supabase
       .from('shopping_list')
@@ -131,34 +121,19 @@ export default function HomePage() {
       .eq('id', id)
 
     if (error) {
-      console.error('Ошибка обновления:', error)
-      loadItems()
-      return
-    }
-
-    if (purchased && item?.products?.name) {
+      showToast('error', 'Не удалось обновить')
+    } else if (purchased && item?.products?.name) {
       recordPurchase('demo-user', item.products.name, item.category)
-      showToast('success', `${item.products.icon || '✅'} ${item.products.name} куплен!`)
-      loadItems()
     }
   }
 
-  // Удаление товара
   const handleDelete = async (id: string) => {
-    const item = items.find((i) => i.id === id)
-
     const { error } = await supabase.from('shopping_list').delete().eq('id', id)
-
     if (error) {
-      console.error('Ошибка удаления:', error)
-      loadItems()
-    } else if (item?.products?.name) {
-      showToast('info', `${item.products.name} удалён из списка`)
-      loadItems()
+      showToast('error', 'Не удалось удалить')
     }
   }
 
-  // Добавление товара вручную
   const handleAdd = async (newItem: {
     name: string
     quantity: number
@@ -186,11 +161,10 @@ export default function HomePage() {
           icon: getIconForCategory(activeTab),
         })
         .select()
-        .single()
+        .maybeSingle()
 
       if (productError || !newProduct) {
-        console.error('Ошибка создания продукта:', productError)
-        showToast('error', `Ошибка создания: ${productError?.message || 'неизвестно'}`)
+        showToast('error', `Ошибка: ${productError?.message || 'неизвестно'}`)
         return
       }
       productId = newProduct.id
@@ -208,13 +182,8 @@ export default function HomePage() {
       })
 
     if (error) {
-      console.error('Ошибка добавления:', error)
       showToast('error', `Ошибка: ${error.message}`)
-      return
     }
-
-    showToast('success', `${getIconForCategory(activeTab)} ${newItem.name} добавлен в ${activeTab === 'products' ? 'Продукты' : 'Быт'}`)
-    loadItems()
   }
 
   const counts = {
@@ -224,53 +193,33 @@ export default function HomePage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 pb-24">
-      {/* Заголовок */}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">🍏 Семейный холодильник</h1>
           <p className="text-sm text-gray-400 mt-1">Умный список покупок</p>
         </div>
         <div className="flex gap-2">
-          <a href="/subscription" className="btn btn-ghost text-sm py-2 px-3">
-            🏆
-          </a>
-          <button
-            onClick={() => setShowScanner(true)}
-            className="btn btn-outline text-sm py-2 px-4 gap-2"
-          >
+          <a href="/subscription" className="btn btn-ghost text-sm py-2 px-3">🏆</a>
+          <button onClick={() => setShowScanner(true)} className="btn btn-outline text-sm py-2 px-4 gap-2">
             <span className="text-lg">📷</span>
             <span className="hidden sm:inline">Сканер</span>
           </button>
         </div>
       </div>
 
-      {/* Вкладки */}
       <div className="mb-4">
         <TabBar
-          tabs={TABS.map((tab) => ({
-            ...tab,
-            count: counts[tab.id as keyof typeof counts] || 0,
-          }))}
+          tabs={TABS.map((tab) => ({ ...tab, count: counts[tab.id as keyof typeof counts] || 0 }))}
           activeTab={activeTab}
           onChange={setActiveTab}
         />
       </div>
 
-      {/* Напоминания */}
       <ReminderBanner
-        onAddItem={(name) => {
-          handleAdd({
-            name,
-            quantity: 1,
-            unit: 'шт.',
-            priority: 1,
-            notes: '',
-          })
-        }}
+        onAddItem={(name) => handleAdd({ name, quantity: 1, unit: 'шт.', priority: 1, notes: '' })}
         onDismiss={() => {}}
       />
 
-      {/* Список */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -278,45 +227,21 @@ export default function HomePage() {
               <div className="flex items-center gap-3">
                 <div className="w-6 h-6 bg-gray-200 rounded-full" />
                 <div className="w-10 h-10 bg-gray-200 rounded-xl" />
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 rounded w-24 mb-1" />
-                  <div className="h-3 bg-gray-200 rounded w-16" />
-                </div>
+                <div className="flex-1"><div className="h-4 bg-gray-200 rounded w-24 mb-1" /><div className="h-3 bg-gray-200 rounded w-16" /></div>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <ShoppingList
-          items={items}
-          category={activeTab as 'products' | 'household'}
-          onToggle={handleToggle}
-          onDelete={handleDelete}
-          onAdd={handleAdd}
-        />
+        <ShoppingList items={items} category={activeTab as 'products' | 'household'} onToggle={handleToggle} onDelete={handleDelete} onAdd={handleAdd} />
       )}
 
-      {/* Сканер */}
-      {showScanner && (
-        <BarcodeScanner onScan={handleScan} onClose={() => setShowScanner(false)} />
-      )}
-
-      {/* Результат сканирования */}
-      {scannedBarcode && (
-        <ScanResultModal
-          barcode={scannedBarcode}
-          onAdd={handleScannedAdd}
-          onClose={() => setScannedBarcode(null)}
-        />
-      )}
+      {showScanner && <BarcodeScanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
+      {scannedBarcode && <ScanResultModal barcode={scannedBarcode} onAdd={handleScannedAdd} onClose={() => setScannedBarcode(null)} />}
     </div>
   )
 }
 
 function getIconForCategory(category: string): string {
-  const icons: Record<string, string> = {
-    products: '🛒',
-    household: '🧹',
-  }
-  return icons[category] || '📦'
+  return { products: '🛒', household: '🧹' }[category] || '📦'
 }
