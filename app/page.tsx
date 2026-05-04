@@ -91,19 +91,24 @@ export default function HomePage() {
       .maybeSingle()
 
     if (newProduct) {
-      const { error } = await supabase
-        .from('shopping_list')
-        .insert({
-          product_id: newProduct.id,
-          quantity: 1,
-          priority: 1,
-          purchased: false,
-          category: item.category,
-        })
+        const { error } = await supabase
+      .from('shopping_list')
+      .insert({
+        product_id: productId,
+        quantity: newItem.quantity,
+        priority: newItem.priority || 1,
+        purchased: false,
+        category: activeTab,
+        notes: newItem.notes || null,
+      })
 
-      if (error) {
-        showToast('error', `Ошибка: ${error.message}`)
-      }
+    if (error) {
+      showToast('error', `Ошибка: ${error.message}`)
+      return
+    }
+
+    showToast('success', `${getIconForCategory(activeTab)} ${newItem.name} добавлен`)
+    loadItems()
     }
 
     setScannedBarcode(null)
