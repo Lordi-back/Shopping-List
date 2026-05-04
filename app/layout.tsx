@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { ToastProvider } from '@/components/ui/ToastProvider'
 import { BottomNav } from '@/components/ui/BottomNav'
+import { ChatWidget } from '@/components/chat/ChatWidget'
 
 export const metadata: Metadata = {
   title: 'Семейный холодильник',
@@ -33,6 +34,7 @@ export default function RootLayout({
             {children}
           </main>
           <BottomNav />
+          <ChatWidget items={[]} onExecuteAction={(action) => console.log('AI action:', action)} />
         </ToastProvider>
       </body>
     </html>
