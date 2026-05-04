@@ -28,6 +28,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addItem = useCallback(async (name: string, category: 'products' | 'household', quantity: number) => {
+    // Сначала ищем продукт
     const { data: existingProduct } = await supabase
       .from('products')
       .select('*')
@@ -37,8 +38,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let productId: string
 
     if (existingProduct) {
+      // Продукт уже есть — берём его id
       productId = existingProduct.id
     } else {
+      // Создаём новый продукт
       const { data: newProduct } = await supabase
         .from('products')
         .insert({
@@ -54,6 +57,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       productId = newProduct.id
     }
 
+    // Добавляем в список покупок
     const { data: addedItem } = await supabase
       .from('shopping_list')
       .insert({
