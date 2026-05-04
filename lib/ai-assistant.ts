@@ -103,7 +103,7 @@ async function handleRecipeRequest(userMessage: string): Promise<AIResponse> {
 
   // 2. Собираем ингредиенты из холодильника
   const fridgeIngredients = fridgeItems
-    .map(item => item.products?.name?.toLowerCase())
+    .map((item: any) => item.products?.name?.toLowerCase())
     .filter(Boolean) as string[]
 
   // 3. Ищем в базе recipes
