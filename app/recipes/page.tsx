@@ -83,7 +83,8 @@ export default function RecipesPage() {
           for (const action of data.actions) {
             if (action.type === 'add_items') {
               for (const item of action.items) {
-                await addItem(item.name, item.category || 'products', item.quantity || 1)
+                const familyId = localStorage.getItem('family_id') || ''
+await addItem(item.name, item.category || 'products', item.quantity || 1, familyId)
                 showToast('success', `✅ ${item.name} добавлен в список`)
               }
             }
