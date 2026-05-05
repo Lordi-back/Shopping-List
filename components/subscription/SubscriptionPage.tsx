@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getOrCreateFamily, checkSubscriptionStatus, joinFamily, leaveFamily, getFamilyDevices } from '@/lib/family'
-import { mockPayment } from '@/lib/subscription'
 
 export function SubscriptionPage() {
   const [status, setStatus] = useState<string>('loading')
@@ -69,8 +68,24 @@ export function SubscriptionPage() {
 
   const handlePay = async () => {
     setIsPaying(true)
-    await mockPayment(userId)
-    init()
+    try {
+      const res = await fetch('/api/payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          returnUrl: window.location.origin + '/subscription',
+        }),
+      })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url // Редирект на ЮKassa
+      } else {
+        alert('Ошибка: ' + (data.error || 'неизвестно'))
+      }
+    } catch (err) {
+      alert('Ошибка при создании платежа')
+    }
     setIsPaying(false)
   }
 
@@ -100,6 +115,7 @@ export function SubscriptionPage() {
           <>
             <div className="text-5xl mb-4">🏆</div>
             <h2 className="text-xl font-bold text-gray-800 mb-2">Premium активен!</h2>
+            <p className="text-sm text-gray-500 mb-4">Спасибо за оплату!</p>
           </>
         )}
         {status === 'trial' && (
@@ -108,8 +124,9 @@ export function SubscriptionPage() {
             <h2 className="text-xl font-bold text-gray-800 mb-2">Пробный период</h2>
             <p className="text-sm text-gray-500 mb-4">{daysLeft} дней осталось</p>
             <button onClick={handlePay} disabled={isPaying} className="btn btn-primary w-full">
-              {isPaying ? 'Оплата...' : '💳 149 ₽/мес'}
+              {isPaying ? 'Перенаправление...' : '💳 Оплатить 149 ₽/мес'}
             </button>
+            <p className="text-xs text-gray-400 mt-2">После оплаты — код семьи для 5 устройств</p>
           </>
         )}
         {status === 'expired' && (
@@ -117,16 +134,19 @@ export function SubscriptionPage() {
             <div className="text-5xl mb-4">⚠️</div>
             <h2 className="text-xl font-bold text-gray-800 mb-2">Подписка истекла</h2>
             <button onClick={handlePay} disabled={isPaying} className="btn btn-primary w-full">
-              {isPaying ? 'Оплата...' : '💳 149 ₽/мес'}
+              {isPaying ? 'Перенаправление...' : '💳 Оплатить 149 ₽/мес'}
             </button>
           </>
         )}
       </div>
 
       {/* Код семьи */}
-      {isCreator && familyCode && status !== 'expired' && (
+      {isCreator && familyCode && (
         <div className="card p-6 text-center">
           <h3 className="text-sm font-semibold text-gray-800 mb-3">🔑 Код семьи</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Отправьте этот код членам семьи — до 5 устройств
+          </p>
           <div className="bg-gray-50 rounded-2xl p-4 mb-3">
             <code className="text-2xl font-bold text-fridge-500 tracking-widest">{familyCode}</code>
           </div>
@@ -134,9 +154,8 @@ export function SubscriptionPage() {
             onClick={() => { navigator.clipboard.writeText(familyCode); alert('Код скопирован!') }}
             className="btn btn-outline w-full text-sm"
           >
-            📋 Скопировать
+            📋 Скопировать код
           </button>
-          <p className="text-xs text-gray-400 mt-2">До 5 устройств на один код</p>
         </div>
       )}
 
@@ -164,7 +183,7 @@ export function SubscriptionPage() {
         </div>
       )}
 
-      {/* Кнопка Выйти из семьи */}
+      {/* Выйти из семьи */}
       <div className="card p-6 text-center">
         <button onClick={handleLeave} className="btn btn-ghost text-red-500 text-sm w-full">
           🚪 Выйти из семьи
