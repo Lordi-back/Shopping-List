@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getOrCreateFamily, checkSubscriptionStatus, joinFamily, leaveFamily, getFamilyDevices } from '@/lib/family'
+import { getDeviceId } from '@/lib/family'
 
 export function SubscriptionPage() {
   const [status, setStatus] = useState<string>('loading')
@@ -15,7 +16,8 @@ export function SubscriptionPage() {
   const [isCreator, setIsCreator] = useState(false)
   const [devices, setDevices] = useState<any[]>([])
   const [familyId, setFamilyId] = useState<string>('')
-  const userId = 'demo-user'
+  const userId = getDeviceId()
+
 
   useEffect(() => { init() }, [])
 
