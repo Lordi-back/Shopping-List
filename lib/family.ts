@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 const DEVICE_ID_KEY = 'fridge_device_id'
 
 export function getDeviceId(): string {
+  if (typeof window === 'undefined') return 'server'
   let deviceId = localStorage.getItem(DEVICE_ID_KEY)
   if (!deviceId) {
     deviceId = 'dev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
@@ -20,12 +21,10 @@ export function generateFamilyCode(): string {
   return code
 }
 
-export async function createFamily(userId: string): Promise<{ familyId: string; code: string }> {
-  const code = generateFamilyCode()
-  
+export async function createFamily(userId: string): Promise<{ familyId: string }> {
   const { data: family } = await supabase
     .from('families')
-    .insert({ name: 'Моя семья', invite_code: code })
+    .insert({ name: 'Моя семья' })
     .select()
     .single()
 
@@ -40,16 +39,37 @@ export async function createFamily(userId: string): Promise<{ familyId: string; 
     subscription_status: 'trial',
   }).eq('id', userId)
 
-  // Добавляем первое устройство
   await addDeviceToFamily(family.id, userId)
 
-  return { familyId: family.id, code }
+  return { familyId: family.id }
+}
+
+export async function generateAndBindCode(familyId: string, deviceId: string): Promise<string> {
+  const { data: family } = await supabase
+    .from('families')
+    .select('invite_code')
+    .eq('id', familyId)
+    .single()
+
+  if (family?.invite_code) {
+    throw new Error('Код уже сгенерирован')
+  }
+
+  const code = generateFamilyCode()
+
+  const { error } = await supabase
+    .from('families')
+    .update({ invite_code: code })
+    .eq('id', familyId)
+
+  if (error) throw new Error('Не удалось сохранить код')
+
+  return code
 }
 
 export async function joinFamily(userId: string, code: string): Promise<{ success: boolean; message: string }> {
   const cleanCode = code.toUpperCase().trim()
 
-  // Ищем семью
   const { data: family } = await supabase
     .from('families')
     .select('*')
@@ -58,7 +78,6 @@ export async function joinFamily(userId: string, code: string): Promise<{ succes
 
   if (!family) return { success: false, message: 'Код не найден' }
 
-  // Проверяем количество устройств
   const { count } = await supabase
     .from('family_devices')
     .select('*', { count: 'exact', head: true })
@@ -69,7 +88,6 @@ export async function joinFamily(userId: string, code: string): Promise<{ succes
     return { success: false, message: `Достигнут лимит (${MAX_DEVICES} устройств)` }
   }
 
-  // Проверяем, не привязан ли уже пользователь к этой семье
   const { data: existing } = await supabase
     .from('family_devices')
     .select('*')
@@ -81,7 +99,6 @@ export async function joinFamily(userId: string, code: string): Promise<{ succes
     return { success: false, message: 'Вы уже в этой семье' }
   }
 
-  // Привязываем пользователя
   await supabase.from('users').update({ family_id: family.id }).eq('id', userId)
   await addDeviceToFamily(family.id, userId)
 
@@ -89,7 +106,6 @@ export async function joinFamily(userId: string, code: string): Promise<{ succes
 }
 
 export async function leaveFamily(userId: string): Promise<void> {
-  // Узнаём family_id пользователя
   const { data: user } = await supabase
     .from('users')
     .select('family_id')
@@ -97,14 +113,12 @@ export async function leaveFamily(userId: string): Promise<void> {
     .single()
 
   if (user?.family_id) {
-    // Удаляем устройство
     await supabase
       .from('family_devices')
       .delete()
       .eq('family_id', user.family_id)
       .eq('user_id', userId)
 
-    // Отвязываем пользователя
     await supabase
       .from('users')
       .update({ family_id: null })
@@ -123,7 +137,7 @@ export async function getFamilyDevices(familyId: string): Promise<any[]> {
 }
 
 async function addDeviceToFamily(familyId: string, userId: string) {
-  const deviceName = navigator.userAgent.slice(0, 100) || 'Устройство'
+  const deviceName = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 100) : 'Устройство'
   await supabase.from('family_devices').insert({
     family_id: familyId,
     user_id: userId,
@@ -161,7 +175,9 @@ export async function checkSubscriptionStatus(userId: string): Promise<{
   if (user.subscription_status === 'active') return { status: 'active' }
 
   if (user.subscription_status === 'trial' && user.trial_ends) {
-    const daysLeft = Math.ceil((new Date(user.trial_ends).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    const daysLeft = Math.ceil(
+      (new Date(user.trial_ends).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    )
     if (daysLeft > 0) return { status: 'trial', trialEnds: user.trial_ends, daysLeft }
   }
 
