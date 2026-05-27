@@ -10,7 +10,8 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { ReminderBanner } from '@/components/reminders/ReminderBanner'
 import { recordPurchase } from '@/lib/prediction-engine'
 import { useStore } from '@/lib/store'
-import { getOrCreateFamily, checkSubscriptionStatus } from '@/lib/family'
+import { getOrCreateFamily, checkSubscriptionStatus, getDeviceId } from '@/lib/family'
+
 
 const TABS = [
   { id: 'products', label: 'Продукты', icon: '🥑' },
@@ -33,7 +34,7 @@ export default function HomePage() {
 
   const init = async () => {
     setLoading(true)
-    const userId = 'demo-user' // Замени на реальный auth позже
+    const userId = getDeviceId()  // Замени на реальный auth позже
     const familyId = await getOrCreateFamily(userId)
     localStorage.setItem('family_id', familyId)
     await loadItems(familyId)
