@@ -2,8 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { getOrCreateFamily, checkSubscriptionStatus, joinFamily, leaveFamily, getFamilyDevices } from '@/lib/family'
-import { getDeviceId } from '@/lib/family'
+import {
+  getOrCreateFamily,
+  checkSubscriptionStatus,
+  joinFamily,
+  leaveFamily,
+  getFamilyDevices,
+  getDeviceId,
+  generateFamilyCode,
+} from '@/lib/family'
 
 export function SubscriptionPage() {
   const [status, setStatus] = useState<string>('loading')
@@ -16,15 +23,23 @@ export function SubscriptionPage() {
   const [isCreator, setIsCreator] = useState(false)
   const [devices, setDevices] = useState<any[]>([])
   const [familyId, setFamilyId] = useState<string>('')
-  const userId = getDeviceId()
+  const [userId, setUserId] = useState<string>('')
 
+  useEffect(() => {
+    // Безопасно вызываем getDeviceId только на клиенте
+    setUserId(getDeviceId())
+  }, [])
 
-  useEffect(() => { init() }, [])
+  useEffect(() => {
+    if (userId) init()
+  }, [userId])
 
   const init = async () => {
+    if (!userId) return
+
     const fid = await getOrCreateFamily(userId)
     setFamilyId(fid)
-    
+
     const sub = await checkSubscriptionStatus(userId)
     setStatus(sub.status)
     setDaysLeft(sub.daysLeft || 0)
@@ -47,6 +62,16 @@ export function SubscriptionPage() {
 
     const devs = await getFamilyDevices(fid)
     setDevices(devs)
+  }
+
+  const handleGenerateCode = async () => {
+    const { data: family } = await supabase
+      .from('families')
+      .update({ invite_code: generateFamilyCode() })
+      .eq('id', familyId)
+      .select()
+      .single()
+    if (family) setFamilyCode(family.invite_code)
   }
 
   const handleJoin = async () => {
@@ -81,7 +106,7 @@ export function SubscriptionPage() {
       })
       const data = await res.json()
       if (data.url) {
-        window.location.href = data.url // Редирект на ЮKassa
+        window.location.href = data.url
       } else {
         alert('Ошибка: ' + (data.error || 'неизвестно'))
       }
@@ -91,7 +116,7 @@ export function SubscriptionPage() {
     setIsPaying(false)
   }
 
-  if (status === 'loading') {
+  if (status === 'loading' || !userId) {
     return (
       <div className="max-w-lg mx-auto px-4 py-8">
         <div className="card animate-pulse p-8 text-center">
@@ -143,6 +168,15 @@ export function SubscriptionPage() {
       </div>
 
       {/* Код семьи */}
+      {isCreator && !familyCode && (
+        <div className="card p-6 text-center">
+          <button onClick={handleGenerateCode} className="btn btn-primary w-full">
+            🔑 Сгенерировать код семьи
+          </button>
+          <p className="text-xs text-gray-400 mt-2">Для подключения до 5 устройств</p>
+        </div>
+      )}
+
       {isCreator && familyCode && (
         <div className="card p-6 text-center">
           <h3 className="text-sm font-semibold text-gray-800 mb-3">🔑 Код семьи</h3>
@@ -153,7 +187,10 @@ export function SubscriptionPage() {
             <code className="text-2xl font-bold text-fridge-500 tracking-widest">{familyCode}</code>
           </div>
           <button
-            onClick={() => { navigator.clipboard.writeText(familyCode); alert('Код скопирован!') }}
+            onClick={() => {
+              navigator.clipboard.writeText(familyCode)
+              alert('Код скопирован!')
+            }}
             className="btn btn-outline w-full text-sm"
           >
             📋 Скопировать код
