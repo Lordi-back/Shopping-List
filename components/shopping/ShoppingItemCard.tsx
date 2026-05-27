@@ -19,26 +19,21 @@ export function ShoppingItemCard({ item, onToggle, onDelete, onEdit }: ShoppingI
       onClick={() => onEdit(item.id)}
     >
       {/* Чекбокс */}
-      <button
+       <button
         onClick={(e) => {
           e.stopPropagation()
           onToggle(item.id, !item.purchased)
         }}
         className={`
-          w-6 h-6 rounded-full border-2 flex items-center justify-center
-          flex-shrink-0 transition-all duration-200
-          ${
-            item.purchased
-              ? 'bg-fridge-500 border-fridge-500'
-              : 'border-gray-300 hover:border-fridge-400'
+          w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-200 text-lg
+          ${item.purchased
+            ? 'bg-gray-100 text-gray-400 hover:bg-fridge-50 hover:text-fridge-500'
+            : 'bg-fridge-50 text-fridge-500 hover:bg-fridge-100'
           }
         `}
+        title={item.purchased ? 'Вернуть в список покупок' : 'Отметить как купленное (дома)'}
       >
-        {item.purchased && (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        )}
+        {item.purchased ? '🔄' : '🛒'}
       </button>
 
       {/* Иконка продукта */}
