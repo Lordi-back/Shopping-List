@@ -9,7 +9,7 @@ import {
   leaveFamily,
   getFamilyDevices,
   getDeviceId,
-  generateFamilyCode,
+  generateAndBindCode,
 } from '@/lib/family'
 
 export function SubscriptionPage() {
@@ -26,7 +26,6 @@ export function SubscriptionPage() {
   const [userId, setUserId] = useState<string>('')
 
   useEffect(() => {
-    // Безопасно вызываем getDeviceId только на клиенте
     setUserId(getDeviceId())
   }, [])
 
@@ -51,7 +50,7 @@ export function SubscriptionPage() {
       .single()
 
     if (family) {
-      setFamilyCode(family.invite_code)
+      setFamilyCode(family.invite_code || '')
       const { data: user } = await supabase
         .from('users')
         .select('family_id')
@@ -65,13 +64,13 @@ export function SubscriptionPage() {
   }
 
   const handleGenerateCode = async () => {
-    const { data: family } = await supabase
-      .from('families')
-      .update({ invite_code: generateFamilyCode() })
-      .eq('id', familyId)
-      .select()
-      .single()
-    if (family) setFamilyCode(family.invite_code)
+    try {
+      const deviceId = getDeviceId()
+      const code = await generateAndBindCode(familyId, deviceId)
+      setFamilyCode(code)
+    } catch (err: any) {
+      alert(err.message || 'Не удалось сгенерировать код')
+    }
   }
 
   const handleJoin = async () => {
@@ -167,7 +166,7 @@ export function SubscriptionPage() {
         )}
       </div>
 
-      {/* Код семьи */}
+      {/* Код семьи: кнопка "Сгенерировать" или показ кода */}
       {isCreator && !familyCode && (
         <div className="card p-6 text-center">
           <button onClick={handleGenerateCode} className="btn btn-primary w-full">
