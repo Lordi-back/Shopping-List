@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useStore } from '@/lib/store'
 import { useToast } from '@/components/ui/ToastProvider'
+import { getDeviceId } from '@/lib/family'
 
 type Message = {
   role: 'user' | 'assistant'
