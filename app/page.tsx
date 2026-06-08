@@ -34,7 +34,7 @@ export default function HomePage() {
 
   const init = async () => {
     setLoading(true)
-    const userId = getDeviceId()  // Замени на реальный auth позже
+    const userId = getDeviceId()
     const familyId = await getOrCreateFamily(userId)
     localStorage.setItem('family_id', familyId)
     await loadItems(familyId)
@@ -85,6 +85,28 @@ export default function HomePage() {
     setScannedBarcode(barcode)
   }
 
+  // 🧾 Обработчик сканирования чека
+  const handleReceiptScan = async (items: { name: string; price: number }[]) => {
+    const familyId = localStorage.getItem('family_id') || ''
+    let addedCount = 0
+
+    for (const item of items) {
+      try {
+        await addItem(item.name, activeTab as 'products' | 'household', 1, familyId)
+        addedCount++
+      } catch (err) {
+        console.error('Ошибка добавления из чека:', item.name, err)
+      }
+    }
+
+    if (addedCount > 0) {
+      showToast('success', `✅ Добавлено ${addedCount} товаров из чека`)
+      await loadItems(familyId)
+    } else {
+      showToast('error', 'Не удалось добавить товары из чека')
+    }
+  }
+
   const handleScannedAdd = async (item: { name: string; category: 'products' | 'household'; icon: string }) => {
     const familyId = localStorage.getItem('family_id')
     const { data: newProduct } = await supabase
@@ -110,7 +132,7 @@ export default function HomePage() {
     const item = items.find((i) => i.id === id)
     await toggleItem(id, purchased)
     if (purchased && item?.products?.name) {
-      recordPurchase('demo-user', item.products.name, item.category)
+      recordPurchase(getDeviceId(), item.products.name, item.category)
     }
   }
 
@@ -122,6 +144,7 @@ export default function HomePage() {
     const familyId = localStorage.getItem('family_id') || ''
     await addItem(newItem.name, activeTab as 'products' | 'household', newItem.quantity, familyId)
     showToast('success', `✅ ${newItem.name} добавлен`)
+    await loadItems(familyId)
   }
 
   const counts = {
@@ -145,7 +168,6 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Баннер триала */}
       {subStatus === 'trial' && (
         <div className="card bg-blue-50 border border-blue-200 mb-4 p-4 animate-slide-up">
           <p className="text-sm font-semibold text-blue-800">🎁 Пробный период: {daysLeft} дн. осталось</p>
@@ -190,7 +212,13 @@ export default function HomePage() {
         <ShoppingList items={items} category={activeTab as 'products' | 'household'} onToggle={handleToggle} onDelete={handleDelete} onAdd={handleAdd} />
       )}
 
-      {showScanner && <BarcodeScanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
+      {showScanner && (
+        <BarcodeScanner
+          onScan={handleScan}
+          onReceiptScan={handleReceiptScan}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
       {scannedBarcode && <ScanResultModal barcode={scannedBarcode} onAdd={handleScannedAdd} onClose={() => setScannedBarcode(null)} />}
     </div>
   )
