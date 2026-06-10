@@ -12,7 +12,6 @@ import { recordPurchase } from '@/lib/prediction-engine'
 import { useStore } from '@/lib/store'
 import { getOrCreateFamily, checkSubscriptionStatus, getDeviceId } from '@/lib/family'
 
-
 const TABS = [
   { id: 'products', label: 'Продукты', icon: '🥑' },
   { id: 'household', label: 'Быт', icon: '🧹' },
@@ -44,6 +43,7 @@ export default function HomePage() {
     setLoading(false)
   }
 
+  // Realtime — только тосты, без loadItems (стейт обновляется оптимистично)
   useEffect(() => {
     const channel = supabase
       .channel('shopping-toasts')
@@ -53,7 +53,6 @@ export default function HomePage() {
         (payload) => {
           const item = payload.new as ShoppingItem
           showToast('success', `🛒 ${item.products?.name || 'Товар'} добавлен`)
-          loadItems(localStorage.getItem('family_id') || '')
         }
       )
       .on(
@@ -62,7 +61,6 @@ export default function HomePage() {
         (payload) => {
           const item = payload.new as ShoppingItem
           if (item.purchased) showToast('success', `✅ ${item.products?.name || 'Товар'} куплен!`)
-          loadItems(localStorage.getItem('family_id') || '')
         }
       )
       .on(
@@ -70,7 +68,6 @@ export default function HomePage() {
         { event: 'DELETE', schema: 'public', table: 'shopping_list' },
         (payload) => {
           showToast('info', `🗑️ Товар удалён`)
-          loadItems(localStorage.getItem('family_id') || '')
         }
       )
       .subscribe()
@@ -78,14 +75,13 @@ export default function HomePage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [showToast, loadItems])
+  }, [showToast])
 
   const handleScan = (barcode: string) => {
     setShowScanner(false)
     setScannedBarcode(barcode)
   }
 
-  // 🧾 Обработчик сканирования чека
   const handleReceiptScan = async (items: { name: string; price: number }[]) => {
     const familyId = localStorage.getItem('family_id') || ''
     let addedCount = 0
@@ -101,7 +97,6 @@ export default function HomePage() {
 
     if (addedCount > 0) {
       showToast('success', `✅ Добавлено ${addedCount} товаров из чека`)
-      await loadItems(familyId)
     } else {
       showToast('error', 'Не удалось добавить товары из чека')
     }
@@ -144,7 +139,6 @@ export default function HomePage() {
     const familyId = localStorage.getItem('family_id') || ''
     await addItem(newItem.name, activeTab as 'products' | 'household', newItem.quantity, familyId)
     showToast('success', `✅ ${newItem.name} добавлен`)
-    await loadItems(familyId)
   }
 
   const counts = {
