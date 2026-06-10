@@ -31,7 +31,6 @@ export function ShoppingList({ items, category, onToggle, onDelete, onAdd }: Sho
 
   return (
     <div className="space-y-6">
-      {/* Форма добавления */}
       {showForm && (
         <AddItemForm
           category={category}
@@ -70,7 +69,7 @@ export function ShoppingList({ items, category, onToggle, onDelete, onAdd }: Sho
                 item={item}
                 onToggle={onToggle}
                 onDelete={onDelete}
-                onEdit={(id) => {}}
+                onEdit={() => {}}
               />
             ))}
           </div>
@@ -91,7 +90,7 @@ export function ShoppingList({ items, category, onToggle, onDelete, onAdd }: Sho
                 item={item}
                 onToggle={onToggle}
                 onDelete={onDelete}
-                onEdit={(id) => {}}
+                onEdit={() => {}}
               />
             ))}
           </div>
